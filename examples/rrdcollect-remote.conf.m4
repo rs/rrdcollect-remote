@@ -3,7 +3,7 @@ dnl ########################################################################
 dnl #          This file is meant to be processed with m4                  #
 dnl ########################################################################
 dnl
-define(`hostgroup', `ifelse($#, 1, , $#, 2, `host = [$1]$2', `host = [$1]$2dnl
+define(`hostgroup', `ifelse($#, 1, , $#, 2, `host = [$1]$2', `host = [$1]$2
 hostgroup($1, shift(shift($@)))')')dnl
 dnl
 logconf         = /etc/vds/log.conf
