@@ -12,24 +12,27 @@ B<rrdcollect-remote> [B<-MFh>] [B<-c> config] [B<-l> logconfig]
 
 =head1 DESCRIPTION
 
-I discovered a nice tool called rrdcollect L<http://rrdcollect.sourceforge.net> which
-can collect lots of status information of a machine and put them in an RRD database
-using pretty less ressources.
+I discovered a nice tool called rrdcollect
+L<http://rrdcollect.sourceforge.net> which can collect lots of status
+information of a machine and put them in an RRD database using pretty
+less ressources.
 
-So it's really nice but I need more because I'd like to have all those RRD files
-centralized on one machine in real time. Yeah, you might answer that I can tell
-rrdcollect to write on a remote filesystem, but it's quite more intrusive, especially
-if you tell rrdcollect to update states each 5 seconds. So the idea of using the
-rrdcollect ability to print RRD commands on the standard output comes to me (to a
-friend actually :).
+So it's really nice but I need more because I'd like to have all those
+RRD files centralized on one machine in real time. Yeah, you might
+answer that I can tell rrdcollect to write on a remote filesystem, but
+it's quite more intrusive, especially if you tell rrdcollect to update
+states each 5 seconds. So the idea of using the rrdcollect ability to
+print RRD commands on the standard output comes to me (to a friend
+actually :).
 
-So there it is, rrdcollect-remote start an rrdcollect process throught SSH on several
-machine and pipe their output in a single rrdtool process. Thus, a single rrdtool
-process updates lot of RRD files for lot of machines.
+So there it is, rrdcollect-remote start an rrdcollect process throught
+SSH on several machine and pipe their output to itself. Thus, a single
+rrdcollect-remote can update a lot of RRD files (using the RRD Perl
+library) comming from several hosts.
 
-Additinally I needed an automatic way to create new RRD files when needed. So
-rrdcollect-remote can search for the rrd create command in the remote rrdcollect 
-configuration file and create it automagically.
+Additinally I needed an automatic way to create new RRD files when
+needed. So rrdcollect-remote can search for the rrd create command in
+the remote rrdcollect configuration file and create it automagically.
 
 =head1 OPTIONS
 
@@ -37,13 +40,13 @@ configuration file and create it automagically.
 
 =item B<-c>, B<--conf> I<file>
 
-Path to the configuration file. By default, rrdcollect-remote looks into
-/etc/rrdcollect-remote/rrdcollect-remote.conf file.
+Path to the configuration file. By default, rrdcollect-remote looks
+into /etc/rrdcollect-remote/rrdcollect-remote.conf file.
 
 =item B<-l>, B<--logconf> I<file> 
 
-Path to the log configuration file. By default, rrdcollect-remote looks
-into /etc/rrdcollect-remote/log.conf file.
+Path to the log configuration file. By default, rrdcollect-remote
+looks into /etc/rrdcollect-remote/log.conf file.
 
 =item B<-p>, B<pid-file> I<file>
 
@@ -70,33 +73,38 @@ Print the help message.
 
 =head1 CONFIGURATION
 
-If the configuration end with .m4 it will be pre-processed with GNU C<m4>.
+If the configuration end with .m4 it will be pre-processed with GNU
+C<m4>.
 
-If you intend to use ssh as remote shell (advised) you have to generate a passphrase-less
-ssh key for rrdcollect-remote and allow this key on each hosts you want gather. To tell
-rrdcollect-remote which SSH key to use, append C<-i /path/to/your/key> to the B<rsh-args> directive.
+If you intend to use ssh as remote shell (advised) you have to
+generate a passphrase-less ssh key for rrdcollect-remote and allow
+this key on each hosts you want gather. To tell rrdcollect-remote
+which SSH key to use, append C<-i /path/to/your/key> to the
+B<rsh-args> directive.
 
 =over 4
 
 =item B<host>
 
-Address of the host on which you want grabbe rrdcollect output. This parameter can be
-specified several times. You can specify the remote user you want to use by prepending
-the host with the username followed by the C<at> character (eg: user@host).
+Address of the host on which you want grabbe rrdcollect output. This
+parameter can be specified several times. You can specify the remote
+user you want to use by prepending the host with the username followed
+by the C<at> character (eg: user@host).
 
-You can add a group information to you host. This information can be usefull for target
-RRD path generation. You add group info, prepend your host with the group name between
-brackets (eg: [my group]host, [group]user@host...).
+You can add a group information to you host. This information can be
+usefull for target RRD path generation. You add group info, prepend
+your host with the group name between brackets (eg: [my group]host,
+[group]user@host...).
 
 =item B<retry-interval>
 
-Number of second to wait before retry a connection to the remote host on failure. Default
-value is 5 seconds.
+Number of second to wait before retry a connection to the remote host
+on failure. Default value is 5 seconds.
 
 =item B<rrdfiles-path>
 
-Path to the base directory for RRD files. You can use some tags that will be changed at
-runtime like:
+Path to the base directory for RRD files. You can use some tags that
+will be changed at runtime like:
 
 =over 4
 
@@ -138,19 +146,23 @@ Default value is /var/lib/rrdcollect-remote/%h/%f.
 
 =item B<logconf>
 
-Path to the log configuration file. Default value is C</etc/rrdcollect-remote/rrdcollect-remote.conf>.
+Path to the log configuration file. Default value is
+C</etc/rrdcollect-remote/rrdcollect-remote.conf>.
 
 =item B<pid-file>
 
-Path to the PID file. Default value is C</var/run/rrdcollect-remote.pid>.
+Path to the PID file. Default value is
+C</var/run/rrdcollect-remote.pid>.
 
 =item B<rrdcollect-cmd>
 
-Path to remote rrdcollect commands. Default value is C</usr/sbin/rrdcollect>.
+Path to remote rrdcollect commands. Default value is
+C</usr/sbin/rrdcollect>.
 
 =item B<rrdcollect-conf>
 
-Path to the remote rrdcollect configuration file. Default value is C</etc/rrdcollect.conf>
+Path to the remote rrdcollect configuration file. Default value is
+C</etc/rrdcollect.conf>
 
 =item B<rsh>
 
@@ -158,15 +170,15 @@ Remote shell command to use (eg: ssh). Default value is C<rsh>.
 
 =item B<rsh-args>
 
-Arguments to send to the rsh command. If you are using ssh as remote shell command
-I advise to put the B<-i> option with the path to an ssh key without passphrase that
-can access machines you gathering stats.
+Arguments to send to the rsh command. If you are using ssh as remote
+shell command I advise to put the B<-i> option with the path to an ssh
+key without passphrase that can access machines you gathering stats.
 
 =item B<auto-rrd-create>
 
-Enable/disable creation of RRD files when needed. If this option is on, rrdcollect-remote
-will try to find RRD create information for the missing file in comments of the remote
-rrdcollect configuration file.
+Enable/disable creation of RRD files when needed. If this option is
+on, rrdcollect-remote will try to find RRD create information for the
+missing file in comments of the remote rrdcollect configuration file.
 
 Can be on or off. Default value is On.
 
@@ -174,12 +186,14 @@ Can be on or off. Default value is On.
 
 =head1 AUTOMATIC RRD CREATION
 
-The rrdcollect tool doesn't implement a way to create RRD files. It only update DS of existing
-RRD files, letting you do the RRD creation work. So rrdcollect-remote use a trick to let you
-inform it how to create RRD files. It's pretty simple, you just have to put a comment starting
-with "rrdtool create <file.rrd>" words followed by valid RRD creation arguments. You can break
-the command if you end the line by a backslash and if the next line (containing the rest of the
-command) start with a comment character (sharp).
+The rrdcollect tool doesn't implement a way to create RRD files. It
+only update DS of existing RRD files, letting you do the RRD creation
+work. So rrdcollect-remote use a trick to let you inform it how to
+create RRD files. It's pretty simple, you just have to put a comment
+starting with "rrdtool create <file.rrd>" words followed by valid RRD
+creation arguments. You can break the command if you end the line by a
+backslash and if the next line (containing the rest of the command)
+start with a comment character (sharp).
 
 Exemple of valid RRD create info:
 
@@ -212,8 +226,8 @@ Olivier Poitrey E<lt>rs@mmania.comE<gt>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -242,7 +256,7 @@ use File::Basename;
 use File::Path;
 use sigtrap handler => \&sig_handler, qw(normal-signals error-signals ALRM CHLD);
 
-# $Id: rrdcollect-remote,v 1.14 2004/09/07 17:29:09 rs Exp $
+# $Id: rrdcollect-remote,v 1.15 2004/09/07 18:47:12 rs Exp $
 our $VERSION = '1.0.4';
 
 # some globals
@@ -365,12 +379,6 @@ $pid_fh->close();
 
 my $select = new IO::Select();
 
-# select FH that we are sure it will never leave to make sure that IO::Select
-# will never be empty
-my $fakefh = new IO::Handle();
-$fakefh->fdopen(fileno(STDIN), 'r');
-$select->add($fakefh);
-
 my $host;
 for my $host (keys %hostlist)
 {
@@ -391,13 +399,27 @@ while(1)
         
         $line = $fh->getline();
 
+        unless(defined $host and length $host)
+        {
+            $logger->error("Anonymous request: $line");
+            next;
+        }
+
         if($fh->eof())
         {
             $select->remove($fh);
-            $logger->error("Remote collector for `$host' closed its standard output, "
-                . "scheduling a restart");
+            
+            if(defined $host and length $host)
+            {
+                $logger->error("Remote collector for `$host' closed its standard output, "
+                    . "scheduling a restart");
 
-            schedule_restart($host);
+                schedule_restart($host);
+            }
+            else
+            {
+                $logger->debug("Close anonymous FH: " . $fh->fileno());
+            }
 
             unless(defined($line) or length($line))
             {
@@ -559,6 +581,8 @@ sub create_rrd
 sub schedule_restart
 {
     my($host) = @_;
+
+    return unless defined $host and length $host;
     $logger->debug("Schedule restart for `$host'");
     
     if(exists $ScheduledRestart{$host})
@@ -597,6 +621,13 @@ sub remote_collector_stop
 sub _remote_collector_start
 {
     my($host) = @_;
+
+    unless(defined $host or length $host)
+    {
+        $logger->error("Anonymous restart request");
+        return;
+    }
+    
     my @rrdcollect =
     (
         $config->get("rsh"),
@@ -671,8 +702,9 @@ sub _remote_collector_stop
     my $pid  = $info->{pid};
     $select->remove($pipe);
     delete($pid_map{$pid});
-    $pipe->close();
+
     kill(15, $pid);
+    $pipe->close();
 }
 
 sub print_version
@@ -722,9 +754,12 @@ sub sig_handler
         if(exists $pid_map{$pid})
         {
             my $host = $pid_map{$pid};
-            $logger->error("Remote collector for host `$host' exited, scheduling restart")
-                if defined $logger;
-            schedule_restart($host);
+            if(defined $host and length $host)
+            {
+                $logger->error("Remote collector for host `$host' exited, scheduling restart")
+                    if defined $logger;
+                schedule_restart($host);
+            }
         }
         elsif(exists $known_pid{$pid})
         {
@@ -743,12 +778,14 @@ sub sig_handler
         $logger->debug("restart_handler called");
         for my $host (keys %ScheduledRestart)
         {
-            remote_collector_restart($host);
+            remote_collector_restart($host)
+                if defined $host and length $host;
             delete($ScheduledRestart{$host});
         }
     }
     else
     {
+        $SIG{ALRM} = 'IGNORE';
         $SIG{CHLD} = sub {wait()};
         for my $host (keys %hostlist)
         {

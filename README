@@ -33,7 +33,7 @@ DESCRIPTION
 
        So it's really nice but I need more because I'd like to have
        all those RRD files centralized on one machine in real
-       time. Yeah, you might answer that I can tell rrd- collect to
+       time. Yeah, you might answer that I can tell rrdcollect to
        write on a remote filesystem, but it's quite more intrusive,
        especially if you tell rrdcollect to update states each 5
        seconds. So the idea of using the rrdcollect ability to print
@@ -41,13 +41,13 @@ DESCRIPTION
        actually :).
 
        So there it is, rrdcollect-remote start an rrdcollect process
-       throught SSH on sev- eral machine and pipe their output in a
-       single rrdtool process. Thus, a single rrd- tool process
-       updates lot of RRD files for lot of machines.
+       throught SSH on several machine and pipe their output to itself.
+       Thus, a single rrdcollect-remote can update a lot of RRD files
+       (using the RRD Perl library) comming from several hosts.
 
        Additinally I needed an automatic way to create new RRD files
-       when needed. So rrd- collect-remote can search for the rrd
-       create command in the remote rrdcollect con- figuration file
+       when needed. So rrdcollect-remote can search for the rrd
+       create command in the remote rrdcollect configuration file
        and create it automagically.
 
 AUTHOR
@@ -56,12 +56,12 @@ AUTHOR
 LICENCE
        This program is free software; you can redistribute it and/or
        modify it under the terms of the GNU General Public License as
-       published by the Free Software Founda- tion; either version 2
+       published by the Free Software Foundation; either version 2
        of the License, or (at your option) any later version.
 
        This program is distributed in the hope that it will be useful,
-       but WITHOUT ANY WAR- RANTY; without even the implied warranty
-       of MERCHANTABILITY or FITNESS FOR A PARTIC- ULAR PURPOSE.  See
+       but WITHOUT ANY WARRANTY; without even the implied warranty
+       of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
        the GNU General Public License for more details.
 
        You should have received a copy of the GNU General Public
