@@ -1,3 +1,25 @@
+rrdcollect-remote (1.0.4) unstable; urgency=low
+
+  * revamping code
+  * fix many bugs
+  * delay collector restarts on failure
+
+ -- Olivier Poitrey <rs@mmania.com>  Tue,  7 Sep 2004 19:26:27 +0200
+
+rrdcollect-remote (1.0.3) unstable; urgency=low
+
+  * added a retry-interval option telling how many seconds to wait between
+    reconnection retry on failure.
+
+ -- Olivier Poitrey <rs@mmania.com>  Tue,  7 Sep 2004 15:00:22 +0200
+
+rrdcollect-remote (1.0.2) unstable; urgency=low
+
+  * cleanup remote collectors process before exit
+  * fix bug in init script
+
+ -- Olivier Poitrey <rs@mmania.com>  Tue,  7 Sep 2004 14:44:11 +0200
+
 rrdcollect-remote (1.0.1) unstable; urgency=low
 
   * added M4 configuration example
