@@ -4,8 +4,10 @@ rrdcollect-remote (1.0.1) unstable; urgency=low
   * added auto-rrd-create option
   * added some doc about auto RRD creation
   * added group to host definition
+  * changed init file to not start by default
+  * fix some typo in init file
 
- -- Olivier Poitrey <rs@mmania.com>  Tue,  7 Sep 2004 12:30:05 +0200
+ -- Olivier Poitrey <rs@mmania.com>  Tue,  7 Sep 2004 13:16:18 +0200
 
 rrdcollect-remote (1.0) unstable; urgency=low
 
