@@ -76,7 +76,26 @@ the host with the username followed by the C<at> character (eg: user@host).
 
 =item B<rrdbase>
 
-Path to the base directory for RRD files.
+Path to the base directory for RRD files. You can use some tags that will be changed at
+runtime like:
+
+=over 4
+
+=item B<%h>
+
+hostname
+
+=item B<%f>
+
+RRD filename
+
+=item B<%F>
+
+RRD full file path (often same as B<%f>)
+
+Default value is /var/lib/statgrabber/%h/%f.
+
+=over
 
 =item B<logconf>
 
