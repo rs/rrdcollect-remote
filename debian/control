@@ -10,7 +10,8 @@ Package: rrdcollect-remote
 Architecture: all
 Depends: ${perl:Depends}, ${misc:Depends}, 
  libproc-daemon-perl, libappconfig-perl, liblog-log4perl-perl,
- liblog-dispatch-perl, librrds-perl, ssh
+ liblog-dispatch-perl, librrds-perl
+Recommends: ssh
 Description: Collect rrdcollect output from several hosts to update local RRD files
  rrdcollect-remote is a Perl daemon that use the rrdcollect ability to print
  RRD updates commands to its standard output to collect what rrdcollect gathered
