@@ -10,6 +10,7 @@ debian/changelog
 debian/compat
 debian/control
 debian/copyright
+debian/default
 debian/dirs
 debian/examples
 debian/init
