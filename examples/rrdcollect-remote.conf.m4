@@ -8,9 +8,6 @@ hostgroup($1, shift(shift($@)))')')dnl
 dnl
 logconf         = /etc/vds/log.conf
 
-rsh             = /usr/bin/ssh
-rsh-args        = -i /etc/rrdcollect-remote/rrdcollect-remote_sshkey
-
 dnl # The hostgroup macros can be used to generate a group of hosts from a list...
 hostgroup(groupname, host1, host2, user@host3)dnl
 
