@@ -88,6 +88,11 @@ You can add a group information to you host. This information can be usefull for
 RRD path generation. You add group info, prepend your host with the group name between
 brackets (eg: [my group]host, [group]user@host...).
 
+=item B<retry-interval>
+
+Number of second to wait before retry a connection to the remote host on failure. Default
+value is 5 seconds.
+
 =item B<rrdfiles-path>
 
 Path to the base directory for RRD files. You can use some tags that will be changed at
@@ -235,9 +240,17 @@ use IO::Select;
 use IPC::Open2;
 use File::Basename;
 use File::Path;
+use sigtrap handler => \&sig_handler, qw(normal-signals error-signals ALRM CHLD);
 
-# $Id: rrdcollect-remote,v 1.12 2004/09/07 10:41:02 rs Exp $
-our $VERSION = '1.0.1';
+# $Id: rrdcollect-remote,v 1.13 2004/09/07 17:27:48 rs Exp $
+our $VERSION = '1.0.3';
+
+# some globals
+our %hostlist;
+our @reverse_map;
+our %pid_map;
+our %known_pid;
+our %ScheduledRestart;
 
 $ENV{PATH} = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -252,6 +265,7 @@ $config->define("m4|M!");
 $config->define('forground|F!');
 $config->define("rsh=s",            {DEFAULT => "rsh"});
 $config->define("rsh-args=s");
+$config->define("retry-interval=i", {DEFAULT => 5});
 $config->define("host=s@");
 $config->define("rrdfiles-path=s",  {DEFAULT => '/var/lib/rrdcollect-remote/%h/%f'});
 $config->define("auto-rrd-create!");
@@ -265,47 +279,34 @@ $config->getopt();
 
 if($config->get('help'))
 {
-    print STDERR <<EOT;
-rrdcollect-remote OPTIONS
-
-OPTIONS:
-    -c, --conf              Path to configuration file 
-                            (default: /etc/rrdcollect-remote/rrdcollect-remote.conf)
-    -l, --logconf           Path to the log configuration file
-                            (default: /etc/rrdcollect-remote/log.conf)
-    -p, --pid-file          Path to the PID file
-                            (default: /var/run/rrdcollect-remote.pid)
-    -M, --m4                Pre-process the configuration file with the
-                            macro expension package m4.
-    -F, --forground         Don't go to background.
-    -h, --help              Print this help
-    -v, --version           Print the version number
-EOT
+    print_help();
     exit;
 }
 
 if($config->get('version'))
 {
-    print STDERR <<EOT;
-rrdcollect-remote $VERSION
-Written by Olivier Poitrey
-
-Copyright (C) 2004 Free Software Foundation, Inc.
-This is free software; see the source for copying conditions.  There is NO
-warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-EOT
+    print_version();
     exit;
 }
 
-if($config->get("conf") !~ /\.m4$/)
+# Configuration file parsing
+# 
+# pre-parse the config file if:
+# - the config file with the postfixed .m4 extension exists
+# - the config file end with .m4 extension
+# - the m4 option is on 
+if($config->get("conf") =~ /\.m4$/)
+{
+    $config->set("m4", 1);
+}
+else
 {
     if(-f $config->get("conf") . '.m4')
     {
-        $config->set("conf", $config->get("conf") . '.m4');
+        $config->set("m4", 1);
     }
 }
-
-if($config->get("m4") || $config->get("conf") =~ /\.m4$/)
+if($config->get("m4"))
 {
     if(open(CFG, 'm4 '.$config->get("conf").'|'))
     {
@@ -324,16 +325,10 @@ else
 # reparse the command line args to let them override the configuration file
 $config->getopt(\@argtmp);
 
+# setup logger
 $0 = 'rrdcollect-remote';
 Log::Log4perl::init($config->get('logconf'));
 my $logger = Log::Log4perl->get_logger('rrdcollect-remote');
-
-# hostlist+maps
-my %hostlist;
-@hostlist{@{$config->get("host")}} = undef;
-my @reverse_map;
-my %pid_map;
-my %known_pid;
 
 # check for existing running instance
 my $pid_file = $config->get('pid-file');
@@ -349,26 +344,6 @@ if(-f $config->get('pid-file'))
     }
 }
 
-$SIG{CHLD} = sub
-{
-    my $pid = wait();
-    if(exists $pid_map{$pid})
-    {
-        my $host = $pid_map{$pid};
-        $logger->error("Remote collector for host `$host' exited");
-        remote_collector_restart($host);
-    }
-    elsif(exists $known_pid{$pid})
-    {
-        $logger->debug("known command exited ($pid)");
-        delete($known_pid{$pid});
-    }
-    else
-    {
-        $logger->error("unknown child exit: $pid");
-    }
-};
-
 # daemonize
 unless($config->get("forground"))
 {
@@ -376,6 +351,9 @@ unless($config->get("forground"))
 }
 
 $logger->info('Starting statistics grabber');
+
+# Init the host list
+@hostlist{@{$config->get("host")}} = undef;
 
 # create the PID file
 my $pid_fh = new IO::File($pid_file, O_WRONLY|O_CREAT|O_TRUNC)
@@ -387,34 +365,39 @@ $pid_fh->close();
 
 my $select = new IO::Select();
 
+# select FH that we are sure it will never leave to make sure that IO::Select
+# will never be empty
+my $fakefh = new IO::Handle();
+$fakefh->fdopen(fileno(STDIN), 'r');
+$select->add($fakefh);
+
 my $host;
 for my $host (keys %hostlist)
 {
     remote_collector_start($host);
 }
 
-# waiting for rrd update commands
+# waiting for rrd update commands (main loop)
 my(@ready, $fh);
 my(@tokenized, $line, $filepath);
-while(@ready = $select->can_read())
+while(1)
 {
+    $logger->debug("Waiting for something happen...");
+    @ready = $select->can_read();
     foreach $fh (@ready)
     {
-        my $host_info = $reverse_map[fileno($fh)];
-        my $host = $host_info->{host};
+        my $host = $reverse_map[fileno($fh)];
+        my $host_info = $hostlist{host};
         
         $line = $fh->getline();
 
         if($fh->eof())
         {
             $select->remove($fh);
-            my $info = $hostlist{$host};
-            my $pipe = $info->{handle};
-            my $pid  = $info->{pid};
             $logger->error("Remote collector for `$host' closed its standard output, "
-                . "trying to restart it ($pid)");
+                . "scheduling a restart");
 
-            remote_collector_restart($host);
+            schedule_restart($host);
 
             unless(defined($line) or length($line))
             {
@@ -548,7 +531,7 @@ sub create_rrd
 
     # trick to avoid strange spin lock
     my $tmp = $SIG{CHLD};
-    $SIG{CHLD} = 'DEFAULT';
+    $SIG{CHLD} = 'IGNORE';
     $conf->close();
     $SIG{CHLD} = $tmp;
 
@@ -573,10 +556,26 @@ sub create_rrd
     RRDs::create(@create_cmd);
 }
 
+sub schedule_restart
+{
+    my($host) = @_;
+    $logger->debug("Schedule restart for `$host'");
+    
+    if(exists $ScheduledRestart{$host})
+    {
+        $logger->debug("Restart already scheduled for `$host'");
+        return;
+    }
+    
+    $ScheduledRestart{$host} = 1;
+    # wait X second before retry
+    alarm($config->get("retry-interval"));
+}
+
 sub remote_collector_start
 {
     my($host) = @_;
-    $logger->debug("Start remote collector of `$host'");
+    $logger->debug("Start remote collector for `$host'");
     _remote_collector_start($host);
 }
 
@@ -586,6 +585,13 @@ sub remote_collector_restart
     $logger->debug("Restart remote collector of `$host'");
     _remote_collector_stop($host);
     _remote_collector_start($host);
+}
+
+sub remote_collector_stop
+{
+    my($host) = @_;
+    $logger->debug("Stop remote collector of `$host'");
+    _remote_collector_stop($host);
 }
 
 sub _remote_collector_start
@@ -604,7 +610,10 @@ sub _remote_collector_start
 
     $logger->debug("Invoking: " . join(' ', @rrdcollect));
 
-    my $pipe = new IO::File();
+
+    my $host_info = $hostlist{$host};
+
+    my $pipe = defined $host_info ? $host_info->{handle} : new IO::File();
     my $pid = $pipe->open('-|');
 
     if(!defined $pid)
@@ -632,16 +641,22 @@ sub _remote_collector_start
 
     $logger->debug("collector PID for `$host': " . $pid);
 
-    $host =~ /^(?:\[(.*?)\])?(?:(.*?)\@)?(.*)$/;
-    my $host_info =
+    unless(defined $host_info)
     {
-        host  => $3,
-        user  => $2,
-        group => $1,
-    };
+        $host =~ /^(?:\[(.*?)\])?(?:(.*?)\@)?(.*)$/;
+        $host_info =
+        {
+            host   => $3,
+            user   => $2,
+            group  => $1,
+            handle => $pipe,
+        };
 
-    $hostlist{$host} = {handle => $pipe, pid => $pid};
-    $reverse_map[fileno($pipe)] = $host_info;
+        $hostlist{$host} = $host_info;
+        $reverse_map[fileno($pipe)] = $host;
+    }
+
+    $host_info->{pid} = $pid;
     $pid_map{$pid} = $host;
     $select->add($pipe);
 }
@@ -655,8 +670,90 @@ sub _remote_collector_stop
     my $pipe = $info->{handle};
     my $pid  = $info->{pid};
     $select->remove($pipe);
-    delete($reverse_map[fileno($pipe)]);
     delete($pid_map{$pid});
-    undef($hostlist{$host});
+    $pipe->close();
     kill(15, $pid);
+}
+
+sub print_version
+{
+    print STDERR <<EOT;
+rrdcollect-remote $VERSION
+Written by Olivier Poitrey
+
+Copyright (C) 2004 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+EOT
+}
+
+sub print_help
+{
+    print STDERR <<EOT;
+rrdcollect-remote OPTIONS
+
+OPTIONS:
+    -c, --conf              Path to configuration file 
+                            (default: /etc/rrdcollect-remote/rrdcollect-remote.conf)
+    -l, --logconf           Path to the log configuration file
+                            (default: /etc/rrdcollect-remote/log.conf)
+    -p, --pid-file          Path to the PID file
+                            (default: /var/run/rrdcollect-remote.pid)
+    -M, --m4                Pre-process the configuration file with the
+                            macro expension package m4.
+    -F, --forground         Don't go to background.
+    -h, --help              Print this help
+    -v, --version           Print the version number
+EOT
+}
+
+# HANDLERS
+
+sub sig_handler
+{
+    my($sig) = @_;
+
+    $logger->debug("SIG Handler called with signal $sig")
+        if defined $logger;
+
+    if($sig eq "CHLD")
+    {
+        my $pid = wait();
+        if(exists $pid_map{$pid})
+        {
+            my $host = $pid_map{$pid};
+            $logger->error("Remote collector for host `$host' exited, scheduling restart")
+                if defined $logger;
+            schedule_restart($host);
+        }
+        elsif(exists $known_pid{$pid})
+        {
+            $logger->debug("known command exited ($pid)")
+                if defined $logger;
+            delete($known_pid{$pid});
+        }
+        else
+        {
+            $logger->error("unknown child exit: $pid")
+                if defined $logger;
+        }
+    }
+    elsif($sig eq 'ALRM')
+    {
+        $logger->debug("restart_handler called");
+        for my $host (keys %ScheduledRestart)
+        {
+            remote_collector_restart($host);
+            delete($ScheduledRestart{$host});
+        }
+    }
+    else
+    {
+        $SIG{CHLD} = sub {wait()};
+        for my $host (keys %hostlist)
+        {
+            remote_collector_stop($host);
+        }
+        exit;
+    }
 }
