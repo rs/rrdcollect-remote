@@ -1,3 +1,9 @@
+rrdcollect-remote (1.0.6) unstable; urgency=low
+
+  * fix a bug on reconnect
+
+ -- Olivier Poitrey <rs@mmania.com>  Wed,  8 Sep 2004 19:45:51 +0200
+
 rrdcollect-remote (1.0.5) unstable; urgency=low
 
   * fix a bug preventing the daemon to stop

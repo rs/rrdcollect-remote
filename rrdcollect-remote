@@ -256,8 +256,8 @@ use File::Basename;
 use File::Path;
 use sigtrap handler => \&sig_handler, qw(normal-signals error-signals ALRM CHLD);
 
-# $Id: rrdcollect-remote,v 1.19 2004/09/08 17:45:07 rs Exp $
-our $VERSION = '1.0.5';
+# $Id: rrdcollect-remote,v 1.20 2004/09/08 17:48:41 rs Exp $
+our $VERSION = '1.0.6';
 
 # some globals
 our %hostlist;
