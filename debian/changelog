@@ -1,3 +1,15 @@
+rrdcollect-remote (1.0.5) unstable; urgency=low
+
+  * fix a bug preventing the daemon to stop
+  * fix some typo in m4 example configuration file
+  * fix major typo
+  * make auto-create default to on
+  * fix bug in %n marker
+  * fix major bug in auto rrd creation process
+  * fix bug in group management
+
+ -- Olivier Poitrey <rs@mmania.com>  Wed,  8 Sep 2004 17:25:19 +0200
+
 rrdcollect-remote (1.0.4) unstable; urgency=low
 
   * revamping code
