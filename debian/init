@@ -6,6 +6,14 @@ test -f /usr/bin/rrdcollect-remote || exit 0
 
 CONF=/etc/rrdcollect-remote/rrdcollect-remote.conf
 SSH_KEY=/etc/rrdcollect-remote/rrdcollect-remote_sshkey
+
+. /etc/default/rrdcollect-remote
+
+if [ "$START" = "0" ]
+then
+    exit
+fi
+
 ARGS="-c $CONF"
 
 function init_sshkey()

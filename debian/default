@@ -1,0 +1,2 @@
+# remove this line to let rrdcollect-remote to start
+START=0
