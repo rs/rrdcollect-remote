@@ -4,7 +4,7 @@
 
 =head1 NAME
 
-statgrabber - Manage with gathering of rrdcollect output running on several remote host
+statgrabber - Collect rrdcollect output from several hosts to update local RRD files.
 
 =head1 SYNOPSIS
 
@@ -74,7 +74,7 @@ Address of the host on which you want grabbe rrdcollect output. This parameter c
 specified several times. You can specify the remote user you want to use by prepending
 the host with the username followed by the C<at> character (eg: user@host).
 
-=item B<rrdbase>
+=item B<rrdfiles-path>
 
 Path to the base directory for RRD files. You can use some tags that will be changed at
 runtime like:
@@ -92,6 +92,8 @@ RRD filename
 =item B<%F>
 
 RRD full file path (often same as B<%f>)
+
+=back
 
 Default value is /var/lib/statgrabber/%h/%f.
 
@@ -133,12 +135,33 @@ L<rrdcollect>, L<rrdtool>, L<perl>
 
 Olivier Poitrey E<lt>rs@mmania.comE<gt>
 
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 - Olivier Poitrey
+
 =cut
 
 use strict;
 use AppConfig;
 use Log::Log4perl;
 use Proc::Daemon;
+use RRDs;
 use IO::File;
 use IO::Select;
 use IPC::Open2;
@@ -159,7 +182,7 @@ $config->define('forground|F!');
 $config->define("rsh=s",            {DEFAULT => "rsh"});
 $config->define("rsh-args=s");
 $config->define("host=s@");
-$config->define("rrdbase=s",        {DEFAULT => '/var/lib/statgrabber/%h/%f'});
+$config->define("rrdfiles-path=s",  {DEFAULT => '/var/lib/statgrabber/%h/%f'});
 $config->define("help|h!");
 
 if($config->get('help'))
@@ -230,25 +253,10 @@ if(-f $config->get('pid-file'))
     }
 }
 
-# open a pipe to the rrd update command
-$SIG{PIPE} = sub
-{
-    $logger->logdie("RRD pipe error");
-};
-
-my($rdrfh, $wtrfh);
-my $rrd_pid = open2($rdrfh, $wtrfh, 'rrdtool', '-');
-
 $SIG{CHLD} = sub
 {
     my $pid = wait();
-    if($pid == $rrd_pid)
-    {
-        $logger->error("RRD process exit!!");
-        # trying to restart the pipe
-        $rrd_pid = open2($rdrfh, $wtrfh, 'rrdtool', '-');
-    }
-    elsif(exists $pid_map{$pid})
+    if(exists $pid_map{$pid})
     {
         my $host = $pid_map{$pid};
         $logger->error("Remote collector for host `$host' exited");
@@ -324,14 +332,19 @@ while(@ready = $select->can_read())
 
         # some check of the received command
         @tokenized = split(' ', $line);
-        unless(@tokenized[0] eq 'update')
+        if(@tokenized[0] eq 'update')
+        {
+            # we don't need the "update" keyword
+            shift(@tokenized);
+        }
+        else
         {
             $logger->error("Received invalid command from `$host': $line");
             next;
         }
         # get the filepath skiping --template option if before the filepath
-        $filepath = $tokenized[1] eq '-t' || $tokenized[1] eq '--template'
-            ? \$tokenized[3] : \$tokenized[1];
+        $filepath = $tokenized[0] eq '-t' || $tokenized[0] eq '--template'
+            ? \$tokenized[2] : \$tokenized[0];
 
         # do some safe checking
         if(index($$filepath, '..') != -1 or # backreferences into the path
@@ -350,7 +363,7 @@ while(@ready = $select->can_read())
 
         $logger->debug("Update file `$$filepath' requested by `$host'");
 
-        rrdtool_send(join(' ', @tokenized));
+        RRDs::update(@tokenized);
     }
 }
 
@@ -358,7 +371,7 @@ sub get_rrdpath
 {
     my($host, $filepath) = @_;
 
-    my $path = $config->get("rrdbase");
+    my $path = $config->get("rrdfiles-path");
     my $file = basename($filepath);
 
     my $i = index($host, '@');
@@ -372,43 +385,6 @@ sub get_rrdpath
     $path =~ s/\%(\w)/$env{$1}/g;
 
     return $path;
-}
-
-sub rrdtool_send
-{
-    my($cmd) = @_;
-
-    $wtrfh->print($cmd, "\n");
-
-    my $response = $rdrfh->getline();
-
-    if(index($response, 'OK') == 0)
-    {
-        $logger->debug("RRD command succeed");
-    }
-    else
-    {
-        if($response =~ /^ERROR:\s*(.*)/)
-        {
-            $logger->error("RRD update error: $1, update line was: $cmd");
-
-            my $response = $rdrfh->getline();
-
-            if(index($response, 'OK') == 0)
-            {
-                $logger->debug("RRD command recovered from previous error");
-            }
-            else
-            {
-                $logger->error("RRD command can't recover from the previous error");
-            }
-        }
-        else
-        {
-            $logger->error("RRD update unknown response: $response"
-                . ", update line was: $cmd");
-        }
-    }
 }
 
 sub create_rrd
@@ -434,7 +410,7 @@ sub create_rrd
     # avoid warning during exit
     $known_pid{$pid};
 
-    my($line, $cmd);
+    my($line, @create_cmd);
     my $in = 0;
     while($line = $conf->getline())
     {
@@ -443,7 +419,7 @@ sub create_rrd
             if($line =~ /^#\s*rrdtool\s+create\s+$file\s*(.*?)\s*(\\?)$/)
             {
                 $in = 1;
-                $cmd = "create $filepath $1";
+                @create_cmd = ($filepath, split(' ', $1));
                 last if not length $2;
             }
         }
@@ -453,12 +429,12 @@ sub create_rrd
             $line =~ s/^#\s*/ / or next;
             if($line =~ s/\s*\\\n$//)
             {
-                $cmd .= $line;
+                push(@create_cmd, split(' ', $line));
             }
             else
             {
                 chomp($line);
-                $cmd .= $line;
+                push(@create_cmd, split(' ', $line));
                 $in = 0;
             }
         }
@@ -476,7 +452,7 @@ sub create_rrd
         return;
     }
 
-    unless(length $cmd)
+    unless(@create_cmd)
     {
         $logger->info("There is no information about RRD creation in config file for `$filepath'");
         return;
@@ -484,11 +460,11 @@ sub create_rrd
 
 
     $logger->info("Creating RRD file `$filepath'");
-    $logger->debug("... using command: $cmd");
+    $logger->debug("... using command: " . join(' ', @create_cmd));
 
     mkpath(dirname($filepath));
 
-    rrdtool_send($cmd);
+    RRDs::create(@create_cmd);
 }
 
 sub remote_collector_start
