@@ -25,10 +25,10 @@ states each 5 seconds. So the idea of using the rrdcollect ability to
 print RRD commands on the standard output comes to me (to a friend
 actually :).
 
-So there it is, rrdcollect-remote start an rrdcollect process throught
-SSH on several machine and pipe their output to itself. Thus, a single
-rrdcollect-remote can update a lot of RRD files (using the RRD Perl
-library) comming from several hosts.
+So there it is, rrdcollect-remote connect to several hosts in order to
+get rrdcollect outputs. Thus, a single rrdcollect-remote can update a
+lot of RRD files (using the RRD Perl library) comming from several
+hosts.
 
 Additinally I needed an automatic way to create new RRD files when
 needed. So rrdcollect-remote can search for the rrd create command in
@@ -154,26 +154,6 @@ C</etc/rrdcollect-remote/rrdcollect-remote.conf>.
 Path to the PID file. Default value is
 C</var/run/rrdcollect-remote.pid>.
 
-=item B<rrdcollect-cmd>
-
-Path to remote rrdcollect commands. Default value is
-C</usr/sbin/rrdcollect>.
-
-=item B<rrdcollect-conf>
-
-Path to the remote rrdcollect configuration file. Default value is
-C</etc/rrdcollect.conf>
-
-=item B<rsh>
-
-Remote shell command to use (eg: ssh). Default value is C<rsh>.
-
-=item B<rsh-args>
-
-Arguments to send to the rsh command. If you are using ssh as remote
-shell command I advise to put the B<-i> option with the path to an ssh
-key without passphrase that can access machines you gathering stats.
-
 =item B<auto-rrd-create>
 
 Enable/disable creation of RRD files when needed. If this option is
@@ -182,7 +162,28 @@ missing file in comments of the remote rrdcollect configuration file.
 
 Can be on or off. Default value is On.
 
-=back 
+=item B<timeout>
+
+How many second to wait for connection timeout.
+
+=back
+
+=head1 CLIENT INSTALLATION
+
+In order to allow rrdcollect-remote to gather rrdcollect output, you
+have to setup each machine you want to monitor to output rrdcollect
+data on a specific port. Default port is 9042 if not specified in the
+rrdcollect-remote configuration.
+
+The easier want to proceed is to use the super daemon inetd. The
+inetd line would do the trick:
+
+    9042 stream tcp nowait root /usr/sbin/rrdcollect /usr/sbin/rrdcollect -o-
+
+If you need some more security, you can use the tcp wrapper to
+restrict access to certain IPs (see L<tcpd> man page for more info):
+
+    9042 stream tcp nowait root /usr/sbin/tcpd /usr/sbin/rrdcollect -o-
 
 =head1 AUTOMATIC RRD CREATION
 
@@ -193,7 +194,14 @@ create RRD files. It's pretty simple, you just have to put a comment
 starting with "rrdtool create <file.rrd>" words followed by valid RRD
 creation arguments. You can break the command if you end the line by a
 backslash and if the next line (containing the rest of the command)
-start with a comment character (sharp).
+start with a comment character (sharp). Then you can cat the
+configuration file into the socket just before to start
+rrdcollect. Thus rrdcollect-remote will keep all lines starting with a
+sharp (#) and extract rrdcreate <file.rrd> args... commands from them
+if needed.
+
+You can use the special character "#" in the filename to match one or
+more numbers in the file (see example).
 
 Exemple of valid RRD create info:
 
@@ -205,6 +213,27 @@ Exemple of valid RRD create info:
 
     file:///proc/test
     "foobar: %d"            test.rrd:foobar
+
+    # Pattern example
+    #
+    # rrdtool create cpu#-stat.rrd --step 5 \
+    #     DS:user:COUNTER:60:0:U \
+    #     DS:nice:COUNTER:60:0:U \
+    #     DS:system:COUNTER:60:0:U \
+    #     DS:idle:COUNTER:60:0:U \
+    #     RRA:AVERAGE:0.5:1:18000
+
+    file:///proc/stat
+    "cpu0 %d %d %d %d" cpu0-stat.rrd:user,nice,system,idle
+    "cpu1 %d %d %d %d" cpu1-stat.rrd:user,nice,system,idle
+    "cpu2 %d %d %d %d" cpu2-stat.rrd:user,nice,system,idle
+    "cpu3 %d %d %d %d" cpu3-stat.rrd:user,nice,system,idle
+
+Example of script you can launch from inetd to allow auto-creation:
+
+    #!/bin/sh
+    grep '^#' /etc/rrdcollect.conf
+    exec /usr/sbin/rrdcollect -o- -c /etc/rrdcollect.conf
 
 =head1 LOGGER CONFIGURATION
 
@@ -251,13 +280,15 @@ use Proc::Daemon;
 use RRDs;
 use IO::File;
 use IO::Select;
-use IPC::Open2;
+use IO::Socket::INET;
 use File::Basename;
 use File::Path;
+use File::Temp;
+use URI;
 use sigtrap handler => \&sig_handler, qw(normal-signals error-signals ALRM CHLD);
 
-# $Id: rrdcollect-remote,v 1.21 2004/09/13 11:18:35 rs Exp $
-our $VERSION = '1.0.7';
+# $Id: rrdcollect-remote,v 1.22 2004/12/28 14:10:36 rs Exp $
+our $VERSION = '1.1.0';
 
 # some globals
 our %hostlist;
@@ -273,18 +304,15 @@ my $config = new AppConfig;
 $config->define("conf|c=s",         {DEFAULT => "/etc/rrdcollect-remote/rrdcollect-remote.conf"});
 $config->define("logconf|l=s",      {DEFAULT => "/etc/rrdcollect-remote/log.conf"});
 $config->define("pid-file|p=s",     {DEFAULT => '/var/run/rrdcollect-remote.pid'});
-$config->define("rrdcollect-cmd=s", {DEFAULT => "/usr/sbin/rrdcollect"});
-$config->define("rrdcollect-conf=s",{DEFAULT => "/etc/rrdcollect.conf"});
 $config->define("m4|M!");
 $config->define('forground|F!');
-$config->define("rsh=s",            {DEFAULT => "rsh"});
-$config->define("rsh-args=s");
 $config->define("retry-interval=i", {DEFAULT => 5});
 $config->define("host=s@");
 $config->define("rrdfiles-path=s",  {DEFAULT => '/var/lib/rrdcollect-remote/%h/%f'});
 $config->define("auto-rrd-create!", {DEFAULT => 1});
 $config->define("help|h!");
 $config->define("version|v!");
+$config->define("timeout|t=s",      {DEFAULT => 0});
 
 # save argv for later use
 my @argtmp = @ARGV;
@@ -396,13 +424,13 @@ while(1)
     {
         my $host = $reverse_map[fileno($fh)];
         my $host_info = $hostlist{$host};
-        
+
         $line = $fh->getline();
 
         if($fh->eof())
         {
             $select->remove($fh);
-            
+
             if(defined $host and length $host)
             {
                 $logger->error("Remote collector for `$host' closed its standard output, "
@@ -439,12 +467,28 @@ while(1)
         {
             # we don't need the "update" keyword
             shift(@tokenized);
+            $host_info->{tmp}->{update_stamp} = 1;
         }
         else
         {
-            $logger->error("Received invalid command from `$host': $line");
+            if(!exists($host_info->{tmp}->{update_stamp}))
+            {
+                if(!$host_info->{tmp}->{config_fh} and $config->get('auto-rrd-create'))
+                {
+                    unless($host_info->{tmp}->{config_fh} = File::Temp::tempfile(CLEANUP => 1))
+                    {
+                        $logger->error("Can't create temporary file");
+                    }
+                }
+                $host_info->{tmp}->{config_fh}->print($line);
+            }
+            else
+            {
+                $logger->error("Received invalid command from `$host': $line");
+            }
             next;
         }
+
         # get the filepath skiping --template option if before the filepath
         $filepath = $tokenized[0] eq '-t' || $tokenized[0] eq '--template'
             ? \$tokenized[2] : \$tokenized[0];
@@ -506,34 +550,24 @@ sub create_rrd
 
     $logger->debug("try to find how to create RRD file `$filepath' into remote rrdcollect conf");
 
-    my $host = length $host_info->{user} 
-        ? join('@', $host_info->{user}, $host_info->{host}) : $host_info->{host};
-    my @get_conf = 
-    (
-        $config->get("rsh"),
-        split(' ', $config->get("rsh-args")),
-        $host, 
-        'cat',
-        $config->get("rrdcollect-conf")
-    );
-
-    my $conf = new IO::Handle();
-    my $pid = open($conf, join(' ', @get_conf, '|'));
-
-    # avoid warning during exit
-    $known_pid{$pid};
-
+    my $conf = $host_info->{tmp}->{config_fh};
+    if(!defined($conf))
+    {
+        $logger->info("There is no information about RRD creation in config file for `$filepath'");
+    }
+    seek($conf, 0, 0);
     my($line, @create_cmd);
     my $in = 0;
     while($line = $conf->getline())
     {
         if(!$in)
         {
-            if($line =~ /^#\s*rrdtool\s+create\s+$file\s*(.*?)\s*(\\?)$/)
+            if($line =~ /^#\s*rrdtool\s+create\s+(\S+)\s*(.*?)\s*(\\?)$/
+               && filename_match($1, $file))
             {
                 $in = 1;
-                @create_cmd = ($filepath, split(' ', $1));
-                last if not length $2;
+                @create_cmd = ($filepath, split(' ', $2));
+                last if not length $3;
             }
         }
         else
@@ -552,12 +586,6 @@ sub create_rrd
             }
         }
     }
-
-    # trick to avoid strange spin lock
-    my $tmp = $SIG{CHLD};
-    $SIG{CHLD} = 'IGNORE';
-    $conf->close();
-    $SIG{CHLD} = $tmp;
 
     if($in)
     {
@@ -580,29 +608,92 @@ sub create_rrd
     RRDs::create(@create_cmd);
 }
 
+sub filename_match
+{
+    my($pattern, $value) = @_;
+
+    if(index($pattern, '#') == -1)
+    {
+        return $pattern eq $value;
+    }
+
+    # the sharp(#) char in pattern means one or more number in $value.
+    # here we try to match them in a secure way (we can't trust $value
+    # because it comes from the network)
+    my($pindex, $length, $index) = (0, 0, 0);
+    my $substr;
+    while(length($pattern) > $pindex)
+    {
+        if(($_ = index($pattern, '#', $pindex)) != -1)
+        {
+            $length = $_ - $pindex;
+        }
+        else
+        {
+            $length = length($pattern) - $pindex;
+        }
+        if(index($value, substr($pattern, $pindex, $length), $index) != -1)
+        {
+            $index += $length;
+            $pindex += $length;
+            if(substr($pattern, $pindex, 1) eq '#')
+            {
+                $pindex++;
+                # on #, ensure that at least one number is present
+                if(substr($value, $index, 1) =~ /\d/)
+                {
+                    $index++
+                }
+                else
+                {
+                    return 0;
+                }
+                # then harvest others
+                while(substr($value, $index, 1) =~ /\d/)
+                {
+                    $index++;
+                }
+            }
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 sub schedule_restart
 {
     my($host) = @_;
 
     return unless defined $host and length $host;
     $logger->debug("Schedule restart for `$host'");
-    
+
     if(exists $ScheduledRestart{$host})
     {
         $logger->debug("Restart already scheduled for `$host'");
         return;
     }
-    
+
     $ScheduledRestart{$host} = 1;
     # wait X second before retry
     alarm($config->get("retry-interval"));
+}
+
+sub unschedule_restart
+{
+    my($host) = @_;
+    return unless defined $host and length $host;
+    delete $ScheduledRestart{$host};
 }
 
 sub remote_collector_start
 {
     my($host) = @_;
     $logger->debug("Start remote collector for `$host'");
-    _remote_collector_start($host);
+    _remote_collector_start($host) || schedule_restart($host);
 }
 
 sub remote_collector_restart
@@ -610,13 +701,14 @@ sub remote_collector_restart
     my($host) = @_;
     $logger->debug("Restart remote collector of `$host'");
     _remote_collector_stop($host);
-    _remote_collector_start($host);
+    _remote_collector_start($host) || schedule_restart($host);
 }
 
 sub remote_collector_stop
 {
     my($host) = @_;
     $logger->debug("Stop remote collector of `$host'");
+    unschedule_restart($host);
     _remote_collector_stop($host);
 }
 
@@ -634,63 +726,41 @@ sub _remote_collector_start
 
     unless(defined $host_info)
     {
-        $host =~ /^(?:\[(.*?)\])?(?:(.*?)\@)?(.*)$/;
-        $host_info =
+        if($host =~ /^(?:\[(.*?)\])?(?:(.*?)\@)?(.+)(?::(\d+))?$/)
         {
-            host   => $3,
-            user   => $2,
-            group  => $1,
-        };
+            $host_info =
+            {
+                host   => $3,
+                user   => $2,
+                group  => $1,
+                port   => $4 || 9042,
+            };
+        }
+        else
+        {
+            $logger->error("Syntax error in host definition: $host");
+        }
     }
 
-    my @rrdcollect =
+    my %opts =
     (
-        $config->get("rsh"),
-        split(' ', $config->get("rsh-args")),
-        '-l', $host_info->{user},
-        $host_info->{host}, 
-        $config->get("rrdcollect-cmd"),
-        '-c',
-        $config->get("rrdcollect-conf"),
-        qw(-o -)
+        PeerAddr  => $host_info->{host},
+        PeerPort  => $host_info->{port},
+        Timeout   => $config->get('timeout'),
     );
+    my $socket = IO::Socket::INET->new(%opts);
 
-    $logger->debug("Invoking: " . join(' ', @rrdcollect));
-
-    my $pipe = defined $host_info->{handle} ? $host_info->{handle} : new IO::File();
-    my $pid = $pipe->open('-|');
-
-    if(!defined $pid)
+    if(!defined $socket)
     {
-        $logger->error("Can't fork remote collector ($host): $!");
-        return;
-    }
-    elsif($pid == 0)
-    {
-        open(STDERR, '>&STDOUT')
-            or $logger->error("Could not dup stderr: $!");
-        open(STDIN, "</dev/null")
-            or $logger->error("Could not connect stdin to /dev/null: $!");
-
-        exec(@rrdcollect)
-            or $logger->error("Could not exec '@rrdcollect': $!")
-            && exit(1);
-    }
-    
-    unless(kill(0, $pid))
-    {
-        $logger->error("Can't start remote collector for host `$host'");
-        return;
+        $logger->error("Can't connect to `$host_info->{host}:$host_info->{port}'");
+        return 0;
     }
 
-    $logger->debug("collector PID for `$host': " . $pid);
-
-    $host_info->{handle} = $pipe;
+    delete $host_info->{tmp};
+    $host_info->{handle} = $socket;
     $hostlist{$host} = $host_info;
-    $reverse_map[fileno($pipe)] = $host;
-    $host_info->{pid} = $pid;
-    $pid_map{$pid} = $host;
-    $select->add($pipe);
+    $reverse_map[fileno($socket)] = $host;
+    $select->add($socket);
 }
 
 sub _remote_collector_stop
@@ -699,14 +769,9 @@ sub _remote_collector_stop
 
     my $info = $hostlist{$host};
     return unless defined $info;
-    my $pipe = $info->{handle};
-    my $pid  = $info->{pid};
-    $select->remove($pipe);
-    delete($pid_map{$pid});
-
-    kill(15, $pid);
-    kill(9, $pid) if kill(0, $pid);
-    $pipe->close() if defined $pipe;
+    my $socket = $info->{handle};
+    $select->remove($socket);
+    $socket->close() if defined $socket;
 }
 
 sub print_version
@@ -746,43 +811,14 @@ EOT
 sub sig_handler
 {
     my($sig) = @_;
-
-    $logger->debug("SIG Handler called with signal $sig")
-        if defined $logger;
-
-    if($sig eq "CHLD")
-    {
-        my $pid = wait();
-        if(exists $pid_map{$pid})
-        {
-            my $host = $pid_map{$pid};
-            if(defined $host and length $host)
-            {
-                $logger->error("Remote collector for host `$host' exited, scheduling restart")
-                    if defined $logger;
-                schedule_restart($host);
-            }
-        }
-        elsif(exists $known_pid{$pid})
-        {
-            $logger->debug("known command exited ($pid)")
-                if defined $logger;
-            delete($known_pid{$pid});
-        }
-        else
-        {
-            $logger->error("unknown child exit: $pid")
-                if defined $logger;
-        }
-    }
-    elsif($sig eq 'ALRM')
+    if($sig eq 'ALRM')
     {
         $logger->debug("restart_handler called");
         for my $host (keys %ScheduledRestart)
         {
+            unschedule_restart($host);
             remote_collector_restart($host)
                 if defined $host and length $host;
-            delete($ScheduledRestart{$host});
         }
     }
     else
