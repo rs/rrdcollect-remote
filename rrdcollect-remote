@@ -66,6 +66,12 @@ Print the help message.
 
 =head1 CONFIGURATION
 
+If the configuration end with .m4 it will be pre-processed with GNU C<m4>.
+
+If you intend to use ssh as remote shell (advised) you have to generate a passphrase-less
+ssh key for statgrabber and allow this key on each hosts you want gather. To tell
+statgrabber which SSH key to use, append C<-i /path/to/your/key> to the B<rsh-args> directive.
+
 =over 4
 
 =item B<host>
@@ -125,13 +131,17 @@ can access machines you gathering stats.
 
 =back
 
+=head1 LOGGER CONFIGURATION
+
+See L<Log::Log4perl>
+
 =head1 EXAMPLES
 
 See example directory from the source tree.
 
 =head1 SEE ALSO
 
-L<rrdcollect>, L<rrdtool>, L<perl>
+L<rrdcollect>, L<rrdtool>, L<Log::Log4perl>, L<perl>
 
 =head1 AUTHOR
 
