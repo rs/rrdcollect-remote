@@ -1,5 +1,121 @@
 #!/usr/bin/perl
 
+=pod
+
+=head1 NAME
+
+statgrabber - Manage with gathering of rrdcollect output running on several remote host
+
+=head1 SYNOPSIS
+
+B<statgrabber> [B<-MFh>] [B<-c> config] [B<-l> logconfig]
+
+=head1 DESCRIPTION
+
+I discovered a nice tool called rrdcollect L<http://rrdcollect.sourceforge.net> which
+can collect lots of status information of a machine and put them in an RRD database
+using pretty less ressources.
+
+So it's really nice but I need more because I'd like to have all those RRD files
+centralized on one machine in real time. Yeah, you might answer that I can tell
+rrdcollect to write on a remote filesystem, but it's quite more intrusive, especially
+if you tell rrdcollect to update states each 5 seconds. So the idea of using the
+rrdcollect ability to print RRD commands on the standard output comes to me (to a
+friend actually :).
+
+So there it is, statgrabber start an rrdcollect process throught SSH on several
+machine and pipe their output in a single rrdtool process. Thus, a single rrdtool
+process updates lot of RRD files for lot of machines.
+
+Additinally I needed an automatic way to create new RRD files when needed. So
+statgrabber can search for the rrd create command in the remote rrdcollect 
+configuration file and create it automagically.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-c>, B<--conf> I<file>
+
+Path to the configuration file. By default, statgrabber looks into
+/etc/statgrabber/statgrabber.conf file.
+
+=item B<-l>, B<--logconf> I<file> 
+
+Path to the log configuration file. By default, statgrabber looks
+into /etc/statgrabber/log.conf file.
+
+=item B<-p>, B<pid-file> I<file>
+
+Path to the PID file. By default, statgrabber uses the
+/var/run/statgrabber.pid file
+
+=item B<-M>, B<--m4>
+
+Pre-process the configuration file with the macro expansion package U<m4>.
+
+=item B<-F>, B<--forground>
+
+Don't put statgrabber process into background.
+
+=item B<-h>, B<--help>
+
+Print the help message.
+
+=back
+
+=head1 CONFIGURATION
+
+=over 4
+
+=item B<host>
+
+Address of the host on which you want grabbe rrdcollect output. This parameter can be
+specified several times. You can specify the remote user you want to use by prepending
+the host with the username followed by the C<at> character (eg: user@host).
+
+=item B<rrdbase>
+
+Path to the base directory for RRD files.
+
+=item B<logconf>
+
+Path to the log configuration file. Default value is C</etc/statgrabber/statgrabber.conf>.
+
+=item B<pid-file>
+
+Path to the PID file. Default value is C</var/run/statgrabber.pid>.
+
+=item B<rrdcollect-cmd>
+
+Path to remote rrdcollect commands. Default value is C</usr/sbin/rrdcollect>.
+
+=item B<rrdcollect-conf>
+
+Path to the remote rrdcollect configuration file. Default value is C</etc/rrdcollect.conf>
+
+=item B<rsh>
+
+Remote shell command to use (eg: ssh). Default value is C<rsh>.
+
+=item B<rsh-args>
+
+Arguments to send to the rsh command. If you are using ssh as remote shell command
+I advise to put the B<-i> option with the path to an ssh key without passphrase that
+can access machines you gathering stats.
+
+=back
+
+=head1 SEE ALSO
+
+L<rrdcollect>, L<rrdtool>, L<perl>
+
+=head1 AUTHOR
+
+Olivier Poitrey E<lt>rs@mmania.comE<gt>
+
+=cut
+
 use strict;
 use AppConfig;
 use Log::Log4perl;
@@ -8,21 +124,43 @@ use IO::File;
 use IO::Select;
 use IPC::Open2;
 use File::Basename;
+use File::Path;
 
 $ENV{PATH} = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 my $config = new AppConfig;
 
-$config->define("conf|c=s",         {DEFAULT => "/etc/vds/statgrabber.conf"});
-$config->define('logconf=s',        {DEFAULT => "/etc/vds/log.conf"});
-$config->define('pid-file=s',       {DEFAULT => '/var/run/vds-node-agent.pid'});
-$config->define("rrdcollect-path=s",{DEFAULT => "/usr/sbin/rrdcollect"});
+$config->define("conf|c=s",         {DEFAULT => "/etc/statgrabber/statgrabber.conf"});
+$config->define("logconf|l=s",      {DEFAULT => "/etc/statgrabber/log.conf"});
+$config->define("pid-file|p=s",     {DEFAULT => '/var/run/statgrabber.pid'});
+$config->define("rrdcollect-cmd=s", {DEFAULT => "/usr/sbin/rrdcollect"});
+$config->define("rrdcollect-conf=s",{DEFAULT => "/etc/rrdcollect.conf"});
+$config->define("m4|M!");
 $config->define('forground|F!');
 $config->define("rsh=s",            {DEFAULT => "rsh"});
 $config->define("rsh-args=s");
 $config->define("host=s@");
-$config->define("rrdfiles-path=s",  {DEFAULT => '/data/monitor/rrd/%h/%f'});
-$config->define("m4|M!");
+$config->define("rrdbase=s",        {DEFAULT => '/var/lib/statgrabber/%h/%f'});
+$config->define("help|h!");
+
+if($config->get('help'))
+{
+    print STDERR <<EOT;
+statgrabber OPTIONS
+
+OPTIONS:
+    --conf, -c                  Path to configuration file 
+                                (default: /etc/statgrabber/statgrabber.conf)
+    --logconf, -l               Path to the log configuration file
+                                (default: /etc/statgrabber/log.conf)
+    --pid-file, -p              Path to the PID file
+                                (default: /var/run/statgrabber.pid)
+    --m4, -M                    Pre-process the configuration file with the
+                                macro expension package m4.
+    --forground, -F             Don't go to background.
+    --help, -h                  Print this help
+EOT
+}
 
 # save argv for later use
 my @argtmp = @ARGV;
@@ -57,6 +195,7 @@ my %hostlist;
 @hostlist{@{$config->get("host")}} = undef;
 my @reverse_map;
 my %pid_map;
+my %known_pid;
 
 # check for existing running instance
 my $pid_file = $config->get('pid-file');
@@ -95,6 +234,11 @@ $SIG{CHLD} = sub
         my $host = $pid_map{$pid};
         $logger->error("Remote collector for host `$host' exited");
         remote_collector_restart($host);
+    }
+    elsif(exists $known_pid{$pid})
+    {
+        $logger->debug("known command exited ($pid)");
+        delete($known_pid{$pid});
     }
     else
     {
@@ -180,35 +324,14 @@ while(@ready = $select->can_read())
 
         $$filepath = get_rrdpath($host, $$filepath);
 
+        unless(-f $$filepath)
+        {
+            create_rrd($host, $$filepath);
+        }
+
         $logger->debug("Update file `$$filepath' requested by `$host'");
 
-        $wtrfh->print(join(' ', @tokenized), "\n");
-
-        my $response = $rdrfh->getline();
-
-        if(index($response, 'OK') != 0)
-        {
-            if($response =~ /^ERROR:\s*(.*)/)
-            {
-                $logger->error("RRD update error: $1, update line was: " . join(' ', @tokenized));
-
-                my $response = $rdrfh->getline();
-
-                if(index($response, 'OK') == 0)
-                {
-                    $logger->debug("RRD command recovered from previous error");
-                }
-                else
-                {
-                    $logger->error("RRD command can't recover from the previous error");
-                }
-            }
-            else
-            {
-                $logger->error("RRD update unknown response: $response"
-                    . ", update line was: " . join(' ', @tokenized));
-            }
-        }
+        rrdtool_send(join(' ', @tokenized));
     }
 }
 
@@ -216,7 +339,7 @@ sub get_rrdpath
 {
     my($host, $filepath) = @_;
 
-    my $path = $config->get("rrdfiles-path");
+    my $path = $config->get("rrdbase");
     my $file = basename($filepath);
 
     my $i = index($host, '@');
@@ -230,6 +353,123 @@ sub get_rrdpath
     $path =~ s/\%(\w)/$env{$1}/g;
 
     return $path;
+}
+
+sub rrdtool_send
+{
+    my($cmd) = @_;
+
+    $wtrfh->print($cmd, "\n");
+
+    my $response = $rdrfh->getline();
+
+    if(index($response, 'OK') == 0)
+    {
+        $logger->debug("RRD command succeed");
+    }
+    else
+    {
+        if($response =~ /^ERROR:\s*(.*)/)
+        {
+            $logger->error("RRD update error: $1, update line was: $cmd");
+
+            my $response = $rdrfh->getline();
+
+            if(index($response, 'OK') == 0)
+            {
+                $logger->debug("RRD command recovered from previous error");
+            }
+            else
+            {
+                $logger->error("RRD command can't recover from the previous error");
+            }
+        }
+        else
+        {
+            $logger->error("RRD update unknown response: $response"
+                . ", update line was: $cmd");
+        }
+    }
+}
+
+sub create_rrd
+{
+    my($host, $filepath) = @_;
+
+    my $file = basename($filepath);
+
+    $logger->debug("try to find how to create RRD file `$filepath' into remote rrdcollect conf");
+
+    my @get_conf = 
+    (
+        $config->get("rsh"),
+        split(' ', $config->get("rsh-args")),
+        $host, 
+        'cat',
+        $config->get("rrdcollect-conf")
+    );
+
+    my $conf = new IO::Handle();
+    my $pid = open($conf, join(' ', @get_conf, '|'));
+
+    # avoid warning during exit
+    $known_pid{$pid};
+
+    my($line, $cmd);
+    my $in = 0;
+    while($line = $conf->getline())
+    {
+        if(!$in)
+        {
+            if($line =~ /^#\s*rrdtool\s+create\s+$file\s*(.*?)\s*(\\?)$/)
+            {
+                $in = 1;
+                $cmd = "create $filepath $1";
+                last if not length $2;
+            }
+        }
+        else
+        {
+            # get splited commands
+            $line =~ s/^#\s*/ / or next;
+            if($line =~ s/\s*\\\n$//)
+            {
+                $cmd .= $line;
+            }
+            else
+            {
+                chomp($line);
+                $cmd .= $line;
+                $in = 0;
+            }
+        }
+    }
+
+    # trick to avoid strange spin lock
+    my $tmp = $SIG{CHLD};
+    $SIG{CHLD} = 'DEFAULT';
+    $conf->close();
+    $SIG{CHLD} = $tmp;
+
+    if($in)
+    {
+        $logger->error("Syntax error in rrd command for file `$file' on host `$host': EOF before end of command");
+        return;
+    }
+
+    unless(length $cmd)
+    {
+        $logger->info("There is no information about RRD creation in config file for `$filepath'");
+        return;
+    }
+
+
+    $logger->info("Creating RRD file `$filepath'");
+    $logger->debug("... using command: $cmd");
+
+    mkpath(dirname($filepath));
+
+    rrdtool_send($cmd);
 }
 
 sub remote_collector_start
@@ -255,7 +495,9 @@ sub _remote_collector_start
         $config->get("rsh"),
         split(' ', $config->get("rsh-args")),
         $host, 
-        $config->get("rrdcollect-path"),
+        $config->get("rrdcollect-cmd"),
+        '-c',
+        $config->get("rrdcollect-conf"),
         qw(-o -)
     );
 
