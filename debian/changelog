@@ -1,3 +1,11 @@
+rrdcollect-remote (1.0.7) unstable; urgency=low
+
+  * fix a bug making rrdcollect-remote to not kill sub-process
+    correctly
+  * fix a typo
+
+ -- Olivier Poitrey <rs@mmania.com>  Mon, 13 Sep 2004 13:16:27 +0200
+
 rrdcollect-remote (1.0.6) unstable; urgency=low
 
   * fix a bug on reconnect
