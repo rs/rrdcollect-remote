@@ -47,7 +47,7 @@ in
 
     stop)
         echo -n "Stopping RRD Collect Remote: rrdcollect-remote"
-        start-stop-daemon --stop --quiet --retry "INT/5/INT/10/INT/30/KILL/5" --pidfile /var/run/rrdcollect-remote.pid
+        start-stop-daemon --stop --quiet --pidfile /var/run/rrdcollect-remote.pid
         echo "."
         ;;
 
@@ -59,7 +59,7 @@ in
 
     restart)
         echo -n "Stopping RRD Collect Remote: rrdcollect-remote"
-        start-stop-daemon --stop --quiet --retry "INT/5/INT/10/INT/30/KILL/5" --pidfile /var/run/rrdcollect-remote.pid
+        start-stop-daemon --stop --quiet --pidfile /var/run/rrdcollect-remote.pid
         echo "."
         sleep 1
         echo -n "Starting RRD Collect Remote: rrdcollect-remote"
