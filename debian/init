@@ -1,11 +1,11 @@
 #!/bin/sh
 #
-# statgrabber    init script file to start the statgrabber daemon.
+# rrdcollect-remote    init script file to start the rrdcollect-remote daemon.
 
-test -f /usr/bin/statgrabber || exit 0
+test -f /usr/bin/rrdcollect-remote || exit 0
 
-CONF=/etc/statgrabber/statgrabber.conf
-SSH_KEY=/etc/statgrabber/statgrabber_sshkey
+CONF=/etc/rrdcollect-remote/rrdcollect-remote.conf
+SSH_KEY=/etc/rrdcollect-remote/rrdcollect-remote_sshkey
 ARGS="-c $CONF"
 
 function init_sshkey()
@@ -25,37 +25,37 @@ function init_sshkey()
 case "$1"
 in
     start)
-        echo -n "Starting VDS filer agent: statgrabber"
+        echo -n "Starting VDS filer agent: rrdcollect-remote"
         init_sshkey
-        start-stop-daemon --start --quiet --exec /usr/bin/statgrabber -- $ARGS
+        start-stop-daemon --start --quiet --exec /usr/bin/rrdcollect-remote -- $ARGS
         echo "."
         ;;
 
     stop)
-        echo -n "Stopping VDS filer agent: statgrabber"
-        start-stop-daemon --stop --quiet --retry "INT/5/INT/10/INT/30/KILL/5" --pidfile /var/run/statgrabber.pid
+        echo -n "Stopping VDS filer agent: rrdcollect-remote"
+        start-stop-daemon --stop --quiet --retry "INT/5/INT/10/INT/30/KILL/5" --pidfile /var/run/rrdcollect-remote.pid
         echo "."
         ;;
 
     reload|force-reload)
-        echo -n "Reloading VDS filer agent: statgrabber"
-        start-stop-daemon --stop --signal 1 --quiet --pidfile /var/run/statgrabber.pid
+        echo -n "Reloading VDS filer agent: rrdcollect-remote"
+        start-stop-daemon --stop --signal 1 --quiet --pidfile /var/run/rrdcollect-remote.pid
         echo "."
         ;;
 
     restart)
-        echo -n "Stopping VDS filer agent: statgrabber"
-        start-stop-daemon --stop --quiet --retry "INT/5/INT/10/INT/30/KILL/5" --pidfile /var/run/statgrabber.pid
+        echo -n "Stopping VDS filer agent: rrdcollect-remote"
+        start-stop-daemon --stop --quiet --retry "INT/5/INT/10/INT/30/KILL/5" --pidfile /var/run/rrdcollect-remote.pid
         echo "."
         sleep 1
-        echo -n "Starting VDS filer agent: statgrabber"
+        echo -n "Starting VDS filer agent: rrdcollect-remote"
         init_sshkey
-        start-stop-daemon --start --quiet --exec /usr/bin/statgrabber -- $ARGS
+        start-stop-daemon --start --quiet --exec /usr/bin/rrdcollect-remote -- $ARGS
         echo "."
         ;;
     
     *)
-        echo "Usage: /etc/init.d/statgrabber {start|stop|restart|reload|force-reload}" >&2
+        echo "Usage: /etc/init.d/rrdcollect-remote {start|stop|restart|reload|force-reload}" >&2
         exit 1
         ;;
 esac

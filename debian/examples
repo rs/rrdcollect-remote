@@ -1,2 +1,2 @@
 examples/log.conf
-examples/statgrabber.conf
+examples/rrdcollect-remote.conf

@@ -4,11 +4,11 @@
 
 =head1 NAME
 
-statgrabber - Collect rrdcollect output from several hosts to update local RRD files.
+rrdcollect-remote - Collect rrdcollect output from several hosts to update local RRD files.
 
 =head1 SYNOPSIS
 
-B<statgrabber> [B<-MFh>] [B<-c> config] [B<-l> logconfig]
+B<rrdcollect-remote> [B<-MFh>] [B<-c> config] [B<-l> logconfig]
 
 =head1 DESCRIPTION
 
@@ -23,12 +23,12 @@ if you tell rrdcollect to update states each 5 seconds. So the idea of using the
 rrdcollect ability to print RRD commands on the standard output comes to me (to a
 friend actually :).
 
-So there it is, statgrabber start an rrdcollect process throught SSH on several
+So there it is, rrdcollect-remote start an rrdcollect process throught SSH on several
 machine and pipe their output in a single rrdtool process. Thus, a single rrdtool
 process updates lot of RRD files for lot of machines.
 
 Additinally I needed an automatic way to create new RRD files when needed. So
-statgrabber can search for the rrd create command in the remote rrdcollect 
+rrdcollect-remote can search for the rrd create command in the remote rrdcollect 
 configuration file and create it automagically.
 
 =head1 OPTIONS
@@ -37,18 +37,18 @@ configuration file and create it automagically.
 
 =item B<-c>, B<--conf> I<file>
 
-Path to the configuration file. By default, statgrabber looks into
-/etc/statgrabber/statgrabber.conf file.
+Path to the configuration file. By default, rrdcollect-remote looks into
+/etc/rrdcollect-remote/rrdcollect-remote.conf file.
 
 =item B<-l>, B<--logconf> I<file> 
 
-Path to the log configuration file. By default, statgrabber looks
-into /etc/statgrabber/log.conf file.
+Path to the log configuration file. By default, rrdcollect-remote looks
+into /etc/rrdcollect-remote/log.conf file.
 
 =item B<-p>, B<pid-file> I<file>
 
-Path to the PID file. By default, statgrabber uses the
-/var/run/statgrabber.pid file
+Path to the PID file. By default, rrdcollect-remote uses the
+/var/run/rrdcollect-remote.pid file
 
 =item B<-M>, B<--m4>
 
@@ -56,7 +56,7 @@ Pre-process the configuration file with the macro expansion package U<m4>.
 
 =item B<-F>, B<--forground>
 
-Don't put statgrabber process into background.
+Don't put rrdcollect-remote process into background.
 
 =item B<-h>, B<--help>
 
@@ -69,8 +69,8 @@ Print the help message.
 If the configuration end with .m4 it will be pre-processed with GNU C<m4>.
 
 If you intend to use ssh as remote shell (advised) you have to generate a passphrase-less
-ssh key for statgrabber and allow this key on each hosts you want gather. To tell
-statgrabber which SSH key to use, append C<-i /path/to/your/key> to the B<rsh-args> directive.
+ssh key for rrdcollect-remote and allow this key on each hosts you want gather. To tell
+rrdcollect-remote which SSH key to use, append C<-i /path/to/your/key> to the B<rsh-args> directive.
 
 =over 4
 
@@ -101,15 +101,15 @@ RRD full file path (often same as B<%f>)
 
 =back
 
-Default value is /var/lib/statgrabber/%h/%f.
+Default value is /var/lib/rrdcollect-remote/%h/%f.
 
 =item B<logconf>
 
-Path to the log configuration file. Default value is C</etc/statgrabber/statgrabber.conf>.
+Path to the log configuration file. Default value is C</etc/rrdcollect-remote/rrdcollect-remote.conf>.
 
 =item B<pid-file>
 
-Path to the PID file. Default value is C</var/run/statgrabber.pid>.
+Path to the PID file. Default value is C</var/run/rrdcollect-remote.pid>.
 
 =item B<rrdcollect-cmd>
 
@@ -184,9 +184,9 @@ $ENV{PATH} = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 my $config = new AppConfig;
 
-$config->define("conf|c=s",         {DEFAULT => "/etc/statgrabber/statgrabber.conf"});
-$config->define("logconf|l=s",      {DEFAULT => "/etc/statgrabber/log.conf"});
-$config->define("pid-file|p=s",     {DEFAULT => '/var/run/statgrabber.pid'});
+$config->define("conf|c=s",         {DEFAULT => "/etc/rrdcollect-remote/rrdcollect-remote.conf"});
+$config->define("logconf|l=s",      {DEFAULT => "/etc/rrdcollect-remote/log.conf"});
+$config->define("pid-file|p=s",     {DEFAULT => '/var/run/rrdcollect-remote.pid'});
 $config->define("rrdcollect-cmd=s", {DEFAULT => "/usr/sbin/rrdcollect"});
 $config->define("rrdcollect-conf=s",{DEFAULT => "/etc/rrdcollect.conf"});
 $config->define("m4|M!");
@@ -194,21 +194,21 @@ $config->define('forground|F!');
 $config->define("rsh=s",            {DEFAULT => "rsh"});
 $config->define("rsh-args=s");
 $config->define("host=s@");
-$config->define("rrdfiles-path=s",  {DEFAULT => '/var/lib/statgrabber/%h/%f'});
+$config->define("rrdfiles-path=s",  {DEFAULT => '/var/lib/rrdcollect-remote/%h/%f'});
 $config->define("help|h!");
 
 if($config->get('help'))
 {
     print STDERR <<EOT;
-statgrabber OPTIONS
+rrdcollect-remote OPTIONS
 
 OPTIONS:
     --conf, -c                  Path to configuration file 
-                                (default: /etc/statgrabber/statgrabber.conf)
+                                (default: /etc/rrdcollect-remote/rrdcollect-remote.conf)
     --logconf, -l               Path to the log configuration file
-                                (default: /etc/statgrabber/log.conf)
+                                (default: /etc/rrdcollect-remote/log.conf)
     --pid-file, -p              Path to the PID file
-                                (default: /var/run/statgrabber.pid)
+                                (default: /var/run/rrdcollect-remote.pid)
     --m4, -M                    Pre-process the configuration file with the
                                 macro expension package m4.
     --forground, -F             Don't go to background.
@@ -240,9 +240,9 @@ else
 # reparse the command line args to let them override the configuration file
 $config->getopt(\@argtmp);
 
-$0 = 'statgrabber';
+$0 = 'rrdcollect-remote';
 Log::Log4perl::init($config->get('logconf'));
-my $logger = Log::Log4perl->get_logger('statgrabber');
+my $logger = Log::Log4perl->get_logger('rrdcollect-remote');
 
 # hostlist+maps
 my %hostlist;

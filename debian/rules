@@ -48,8 +48,8 @@ install-stamp: build-stamp
 
 	#$(MAKE) test
 	$(MAKE) install DESTDIR=$(TMP) PREFIX=/usr
-	install -D -m 0644 examples/statgrabber.conf $(TMP)/etc/statgrabber/statgrabber.conf
-	install -D -m 0644 examples/log.conf $(TMP)/etc/statgrabber/log.conf
+	install -D -m 0644 examples/rrdcollect-remote.conf $(TMP)/etc/rrdcollect-remote/rrdcollect-remote.conf
+	install -D -m 0644 examples/log.conf $(TMP)/etc/rrdcollect-remote/log.conf
 	
 	# As this is a architecture independent package, we are not supposed to install
 	# stuff to /usr/lib. MakeMaker creates the dirs, we delete them from the deb:

@@ -1,4 +1,4 @@
-Source: statgrabber
+Source: rrdcollect-remote
 Section: net
 Priority: optional
 Build-Depends: debhelper (>= 4.0.8)
@@ -6,9 +6,14 @@ Build-Depends-Indep: perl (>= 5.8.0-7), debhelper (>= 4.0.8)
 Maintainer: Olivier Poitrey <rs@mmania.com>
 Standards-Version: 3.6.1
 
-Package: statgrabber
+Package: rrdcollect-remote
 Architecture: all
 Depends: ${perl:Depends}, ${misc:Depends}, 
  libproc-daemon-perl, libappconfig-perl, liblog-log4perl-perl,
- liblog-dispatch-perl, librrds-perl
-Description: Collect rrdcollect output from several hosts to update local RRD files.
+ liblog-dispatch-perl, librrds-perl, ssh
+Description: Collect rrdcollect output from several hosts to update local RRD files
+ rrdcollect-remote is a Perl daemon that use the rrdcollect ability to print
+ RRD updates commands to its standard output to collect what rrdcollect gathered
+ from a remote machine with the help of a remote shell like rsh or ssh. Thus you
+ can centralize rrdcollect outputs of several hosts on a single repository with 
+ no needs of complexe and intrusive file sharing protocols like NFS and so on.
