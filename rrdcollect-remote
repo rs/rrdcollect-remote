@@ -84,6 +84,10 @@ Address of the host on which you want grabbe rrdcollect output. This parameter c
 specified several times. You can specify the remote user you want to use by prepending
 the host with the username followed by the C<at> character (eg: user@host).
 
+You can add a group information to you host. This information can be usefull for target
+RRD path generation. You add group info, prepend your host with the group name between
+brackets (eg: [my group]host, [group]user@host...).
+
 =item B<rrdfiles-path>
 
 Path to the base directory for RRD files. You can use some tags that will be changed at
@@ -94,6 +98,18 @@ runtime like:
 =item B<%h>
 
 hostname
+
+=item B<%u>
+
+username (can be empty)
+
+=item B<%g>
+
+host group (can be empty)
+
+=item B<%n>
+
+name (RRD filename without the directory part nor the .rrd extension)
 
 =item B<%f>
 
@@ -133,7 +149,35 @@ Arguments to send to the rsh command. If you are using ssh as remote shell comma
 I advise to put the B<-i> option with the path to an ssh key without passphrase that
 can access machines you gathering stats.
 
-=back
+=item B<auto-rrd-create>
+
+Enable/disable creation of RRD files when needed. If this option is on, rrdcollect-remote
+will try to find RRD create information for the missing file in comments of the remote
+rrdcollect configuration file.
+
+Can be on or off. Default value is On.
+
+=back 
+
+=head1 AUTOMATIC RRD CREATION
+
+The rrdcollect tool doesn't implement a way to create RRD files. It only update DS of existing
+RRD files, letting you do the RRD creation work. So rrdcollect-remote use a trick to let you
+inform it how to create RRD files. It's pretty simple, you just have to put a comment starting
+with "rrdtool create <file.rrd>" words followed by valid RRD creation arguments. You can break
+the command if you end the line by a backslash and if the next line (containing the rest of the
+command) start with a comment character (sharp).
+
+Exemple of valid RRD create info:
+
+    # Auto-RRD-Create Example
+    #
+    # rrdtool create test.rrd --step 5 \
+    #     DS:foobar:GAUGE:2:0:U \
+    #     RRA:AVERAGE:0.5:1:18000
+
+    file:///proc/test
+    "foobar: %d"            test.rrd:foobar
 
 =head1 LOGGER CONFIGURATION
 
@@ -184,8 +228,8 @@ use IPC::Open2;
 use File::Basename;
 use File::Path;
 
-# $Id: rrdcollect-remote,v 1.10 2004/09/07 03:05:30 rs Exp $
-our $VERSION = '1.0';
+# $Id: rrdcollect-remote,v 1.11 2004/09/07 10:34:37 rs Exp $
+our $VERSION = '1.0.1';
 
 $ENV{PATH} = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -202,6 +246,7 @@ $config->define("rsh=s",            {DEFAULT => "rsh"});
 $config->define("rsh-args=s");
 $config->define("host=s@");
 $config->define("rrdfiles-path=s",  {DEFAULT => '/var/lib/rrdcollect-remote/%h/%f'});
+$config->define("auto-rrd-create!");
 $config->define("help|h!");
 $config->define("version|v!");
 
@@ -347,7 +392,9 @@ while(@ready = $select->can_read())
 {
     foreach $fh (@ready)
     {
-        my $host = $reverse_map[fileno($fh)];
+        my $host_info = $reverse_map[fileno($fh)];
+        my $host = $host_info->{host};
+        
         $line = $fh->getline();
 
         if($fh->eof())
@@ -397,11 +444,11 @@ while(@ready = $select->can_read())
             next;
         }
 
-        $$filepath = get_rrdpath($host, $$filepath);
+        $$filepath = get_rrdpath($$filepath, $host_info);
 
-        unless(-f $$filepath)
+        if($config->get('auto-rrd-create') && ! -f $$filepath)
         {
-            create_rrd($host, $$filepath);
+            create_rrd($$filepath, $host_info);
         }
 
         $logger->debug("Update file `$$filepath' requested by `$host'");
@@ -412,19 +459,21 @@ while(@ready = $select->can_read())
 
 sub get_rrdpath
 {
-    my($host, $filepath) = @_;
+    my($filepath, $host_info) = @_;
 
     my $path = $config->get("rrdfiles-path");
     my $file = basename($filepath);
+    my $name = basename($filepath, 'rrd');
 
-    my $i = index($host, '@');
-
-    if($i != -1)
-    {
-        # remove the user part
-        substr($host, 0, $i + 1, '');
-    }
-    my %env = (h => $host, f => $file, F => $filepath);
+    my %env =
+    (
+        h => $host_info->{host},
+        u => $host_info->{user},
+        g => $host_info->{group},
+        n => $name,
+        f => $file,
+        F => $filepath,
+    );
     $path =~ s/\%(\w)/$env{$1}/g;
 
     return $path;
@@ -432,12 +481,14 @@ sub get_rrdpath
 
 sub create_rrd
 {
-    my($host, $filepath) = @_;
+    my($filepath, $host_info) = @_;
 
     my $file = basename($filepath);
 
     $logger->debug("try to find how to create RRD file `$filepath' into remote rrdcollect conf");
 
+    my $host = length $host_info->{user} 
+        ? join('@', $host_info->{user}, $host_info->{host}) : $host_info->{host};
     my @get_conf = 
     (
         $config->get("rsh"),
@@ -569,8 +620,16 @@ sub _remote_collector_start
 
     $logger->debug("collector PID for `$host': " . $pid);
 
+    $host =~ /^(?:\[(.*?)\])?(?:(.*?)\@)?(.*)$/;
+    my $host_info =
+    {
+        host  => $3,
+        user  => $2,
+        group => $1,
+    };
+
     $hostlist{$host} = {handle => $pipe, pid => $pid};
-    $reverse_map[fileno($pipe)] = $host;
+    $reverse_map[fileno($pipe)] = $host_info;
     $pid_map{$pid} = $host;
     $select->add($pipe);
 }
