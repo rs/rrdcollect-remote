@@ -256,8 +256,8 @@ use File::Basename;
 use File::Path;
 use sigtrap handler => \&sig_handler, qw(normal-signals error-signals ALRM CHLD);
 
-# $Id: rrdcollect-remote,v 1.16 2004/09/08 08:58:28 rs Exp $
-our $VERSION = '1.0.4';
+# $Id: rrdcollect-remote,v 1.17 2004/09/08 14:35:16 rs Exp $
+our $VERSION = '1.0.5';
 
 # some globals
 our %hostlist;
@@ -627,12 +627,26 @@ sub _remote_collector_start
         $logger->error("Anonymous restart request");
         return;
     }
-    
+
+    my $host_info = $hostlist{$host};
+
+    unless(defined $host_info)
+    {
+        $host =~ /^(?:\[(.*?)\])?(?:(.*?)\@)?(.*)$/;
+        $host_info =
+        {
+            host   => $3,
+            user   => $2,
+            group  => $1,
+        };
+    }
+
     my @rrdcollect =
     (
         $config->get("rsh"),
         split(' ', $config->get("rsh-args")),
-        $host, 
+        '-l', $host_info->{user},
+        $host_info->{host}, 
         $config->get("rrdcollect-cmd"),
         '-c',
         $config->get("rrdcollect-conf"),
@@ -641,10 +655,7 @@ sub _remote_collector_start
 
     $logger->debug("Invoking: " . join(' ', @rrdcollect));
 
-
-    my $host_info = $hostlist{$host};
-
-    my $pipe = defined $host_info ? $host_info->{handle} : new IO::File();
+    my $pipe = defined $host_info->{handle} ? $host_info->{handle} : new IO::File();
     my $pid = $pipe->open('-|');
 
     if(!defined $pid)
@@ -672,17 +683,9 @@ sub _remote_collector_start
 
     $logger->debug("collector PID for `$host': " . $pid);
 
-    unless(defined $host_info)
+    unless(defined $hostlist{$host})
     {
-        $host =~ /^(?:\[(.*?)\])?(?:(.*?)\@)?(.*)$/;
-        $host_info =
-        {
-            host   => $3,
-            user   => $2,
-            group  => $1,
-            handle => $pipe,
-        };
-
+        $hostlist{handle} = $pipe;
         $hostlist{$host} = $host_info;
         $reverse_map[fileno($pipe)] = $host;
     }
@@ -704,7 +707,7 @@ sub _remote_collector_stop
     delete($pid_map{$pid});
 
     kill(15, $pid);
-    $pipe->close();
+    $pipe->close() if defined $pipe;
 }
 
 sub print_version
