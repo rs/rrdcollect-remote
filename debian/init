@@ -15,11 +15,16 @@ then
     exit
 fi
 
+if [ -f "$CONF.m4" ]
+then
+    CONF="$CONF.m4"
+fi
+
 ARGS="-c $CONF"
 
 function init_sshkey()
 {
-    if grep -q "rsh-args.*-i.*$SSH_KEY" $CONF
+    if test -f $CONF && grep -q "rsh-args.*-i.*$SSH_KEY" $CONF
     then
         if [ ! -f $SSH_KEY ]
         then
