@@ -97,8 +97,6 @@ RRD full file path (often same as B<%f>)
 
 Default value is /var/lib/statgrabber/%h/%f.
 
-=over
-
 =item B<logconf>
 
 Path to the log configuration file. Default value is C</etc/statgrabber/statgrabber.conf>.
@@ -126,6 +124,10 @@ I advise to put the B<-i> option with the path to an ssh key without passphrase 
 can access machines you gathering stats.
 
 =back
+
+=head1 EXAMPLES
+
+See example directory from the source tree.
 
 =head1 SEE ALSO
 
