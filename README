@@ -1,0 +1,73 @@
+rrdcollect-remote
+=================
+
+INSTALLATION
+
+To install this program type the following:
+
+   perl Makefile.PL
+   make
+   make install
+
+DEPENDENCIES
+
+This module requires these other modules and libraries:
+
+  AppConfig, Log::Log4perl, Proc::Daemon, RRDs, IO::File, IO::Select, 
+  IPC::Open2, File::Basename, File::Path
+
+A remote shell program is also needed like rsh or ssh.
+
+NAME
+       rrdcollect-remote - Collect rrdcollect output from several
+       hosts to update local RRD files.
+
+SYNOPSIS
+       rrdcollect-remote [-MFh] [-c config] [-l logconfig]
+
+DESCRIPTION
+       I discovered a nice tool called rrdcollect
+       <http://rrdcollect.sourceforge.net> which can collect lots of
+       status information of a machine and put them in an RRD database
+       using pretty less ressources.
+
+       So it's really nice but I need more because I'd like to have
+       all those RRD files centralized on one machine in real
+       time. Yeah, you might answer that I can tell rrd- collect to
+       write on a remote filesystem, but it's quite more intrusive,
+       especially if you tell rrdcollect to update states each 5
+       seconds. So the idea of using the rrdcollect ability to print
+       RRD commands on the standard output comes to me (to a friend
+       actually :).
+
+       So there it is, rrdcollect-remote start an rrdcollect process
+       throught SSH on sev- eral machine and pipe their output in a
+       single rrdtool process. Thus, a single rrd- tool process
+       updates lot of RRD files for lot of machines.
+
+       Additinally I needed an automatic way to create new RRD files
+       when needed. So rrd- collect-remote can search for the rrd
+       create command in the remote rrdcollect con- figuration file
+       and create it automagically.
+
+AUTHOR
+       Olivier Poitrey <rs@mmania.com>
+
+LICENCE
+       This program is free software; you can redistribute it and/or
+       modify it under the terms of the GNU General Public License as
+       published by the Free Software Founda- tion; either version 2
+       of the License, or (at your option) any later version.
+
+       This program is distributed in the hope that it will be useful,
+       but WITHOUT ANY WAR- RANTY; without even the implied warranty
+       of MERCHANTABILITY or FITNESS FOR A PARTIC- ULAR PURPOSE.  See
+       the GNU General Public License for more details.
+
+       You should have received a copy of the GNU General Public
+       License along with this program; if not, write to the Free
+       Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
+       MA 02111-1307 USA
+
+COPYRIGHT
+       Copyright (C) 2004 - Olivier Poitrey
