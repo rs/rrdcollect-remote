@@ -5,19 +5,23 @@ use AppConfig;
 use Log::Log4perl;
 use Proc::Daemon;
 use IO::File;
-use IO::Pipe;
 use IO::Select;
 use IPC::Open2;
+use File::Basename;
 
 $ENV{PATH} = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 my $config = new AppConfig;
 
-$config->define("conf|c=s",    {DEFAULT => "/etc/vds/statgrabber.conf"});
-$config->define('logconf=s',   {DEFAULT => "/etc/vds/log.conf"});
-$config->define('pid-file=s',  {DEFAULT => '/var/run/vds-node-agent.pid'});
-$config->define("rsh=s",       {DEFAULT => "ssh"});
+$config->define("conf|c=s",         {DEFAULT => "/etc/vds/statgrabber.conf"});
+$config->define('logconf=s',        {DEFAULT => "/etc/vds/log.conf"});
+$config->define('pid-file=s',       {DEFAULT => '/var/run/vds-node-agent.pid'});
+$config->define("rrdcollect-path=s",{DEFAULT => "/usr/sbin/rrdcollect"});
+$config->define('forground|F!');
+$config->define("rsh=s",            {DEFAULT => "rsh"});
+$config->define("rsh-args=s");
 $config->define("host=s@");
+$config->define("rrdfiles-path=s",  {DEFAULT => '/data/monitor/rrd/%h/%f'});
 $config->define("m4|M!");
 
 # save argv for later use
@@ -99,13 +103,17 @@ $SIG{CHLD} = sub
 };
 
 # daemonize
-#Proc::Daemon::Init();
+unless($config->get("forground"))
+{
+    Proc::Daemon::Init();
+}
 
 $logger->info('Starting statistics grabber');
 
 # create the PID file
 my $pid_fh = new IO::File($pid_file, O_WRONLY|O_CREAT|O_TRUNC)
     or $logger->logdie("Cannot write to PID file `$pid_file': $!");;
+$logger->debug("Writing PID file ($$)");
 $pid_fh->print($$);
 $pid_fh->close();
 
@@ -131,11 +139,18 @@ while(@ready = $select->can_read())
         if($fh->eof())
         {
             $select->remove($fh);
-            my $pipe = $hostlist{$host};
-            my $pid  = ${*$pipe}{io_pipe_pid};
+            my $info = $hostlist{$host};
+            my $pipe = $info->{handle};
+            my $pid  = $info->{pid};
             $logger->error("Remote collector for `$host' closed its standard output, "
-                . "trying to kill it ($pid)");
-            kill(2, $pid);
+                . "trying to restart it ($pid)");
+
+            remote_collector_restart($host);
+
+            unless(defined($line) or length($line))
+            {
+                next;
+            }
         }
 
         unless(defined($line) or length($line))
@@ -153,35 +168,68 @@ while(@ready = $select->can_read())
         }
         # get the filepath skiping --template option if before the filepath
         $filepath = $tokenized[1] eq '-t' || $tokenized[1] eq '--template'
-            ? $tokenized[3] : $tokenized[1];
-
-        $logger->debug("Update file `$filepath' requested by `$host'");
+            ? \$tokenized[3] : \$tokenized[1];
 
         # do some safe checking
-        if(index($filepath, '..') != -1 or # backreferences into the path
-           index($filepath, '/')  == 0)    # absolute path
+        if(index($$filepath, '..') != -1 or # backreferences into the path
+           index($$filepath, '/')  == 0)    # absolute path
         {
-            $logger->error("File path unsafe from host `$host'!! ($filepath)");
+            $logger->error("File path unsafe from host `$host'!! ($$filepath)");
             next;
         }
 
-        $wtrfh->print($line);
+        $$filepath = get_rrdpath($host, $$filepath);
 
-        my $response = $wtrfh->getline();
+        $logger->debug("Update file `$$filepath' requested by `$host'");
+
+        $wtrfh->print(join(' ', @tokenized), "\n");
+
+        my $response = $rdrfh->getline();
 
         if(index($response, 'OK') != 0)
         {
             if($response =~ /^ERROR:\s*(.*)/)
             {
-                $logger->error("RRD update error: $1, update line was: $line");
+                $logger->error("RRD update error: $1, update line was: " . join(' ', @tokenized));
+
+                my $response = $rdrfh->getline();
+
+                if(index($response, 'OK') == 0)
+                {
+                    $logger->debug("RRD command recovered from previous error");
+                }
+                else
+                {
+                    $logger->error("RRD command can't recover from the previous error");
+                }
             }
             else
             {
                 $logger->error("RRD update unknown response: $response"
-                    . ", update line was: $line");
+                    . ", update line was: " . join(' ', @tokenized));
             }
         }
     }
+}
+
+sub get_rrdpath
+{
+    my($host, $filepath) = @_;
+
+    my $path = $config->get("rrdfiles-path");
+    my $file = basename($filepath);
+
+    my $i = index($host, '@');
+
+    if($i != -1)
+    {
+        # remove the user part
+        substr($host, 0, $i + 1, '');
+    }
+    my %env = (h => $host, f => $file, F => $filepath);
+    $path =~ s/\%(\w)/$env{$1}/g;
+
+    return $path;
 }
 
 sub remote_collector_start
@@ -195,30 +243,69 @@ sub remote_collector_restart
 {
     my($host) = @_;
     $logger->debug("Restart remote collector of `$host'");
+    _remote_collector_stop($host);
     _remote_collector_start($host);
 }
 
 sub _remote_collector_start
 {
     my($host) = @_;
-    my $rrdcollect = sprintf("%s %s rrdcollect -o -|", $config->get("rsh"), $host);
-    my $pipe = new IO::Pipe();
+    my @rrdcollect =
+    (
+        $config->get("rsh"),
+        split(' ', $config->get("rsh-args")),
+        $host, 
+        $config->get("rrdcollect-path"),
+        qw(-o -)
+    );
+
+    $logger->debug("Invoking: " . join(' ', @rrdcollect));
+
+    my $pipe = new IO::File();
+    my $pid = $pipe->open('-|');
+
+    if(!defined $pid)
+    {
+        $logger->error("Can't fork remote collector ($host): $!");
+        return;
+    }
+    elsif($pid == 0)
+    {
+        open(STDERR, '>&STDOUT')
+            or $logger->error("Could not dup stderr: $!");
+        open(STDIN, "</dev/null")
+            or $logger->error("Could not connect stdin to /dev/null: $!");
+
+        exec(@rrdcollect)
+            or $logger->error("Could not exec '@rrdcollect': $!")
+            && exit(1);
+    }
     
-    unless($pipe->reader($rrdcollect))
+    unless(kill(0, $pid))
     {
         $logger->error("Can't start remote collector for host `$host'");
-        return undef;
+        return;
     }
 
-    my $pid = ${*$pipe}{io_pipe_pid};
-    unless($pid)
-    {
-        $logger->error("Can't determin pid for collector of `$host'");
-    }
     $logger->debug("collector PID for `$host': " . $pid);
 
-    $hostlist{$host} = $pipe;
+    $hostlist{$host} = {handle => $pipe, pid => $pid};
     $reverse_map[fileno($pipe)] = $host;
     $pid_map{$pid} = $host;
     $select->add($pipe);
+}
+
+sub _remote_collector_stop
+{
+    my($host) = @_;
+
+    my $info = $hostlist{$host};
+    return unless defined $info;
+    my $pipe = $info->{handle};
+    my $pid  = $info->{pid};
+    $select->remove($pipe);
+    delete($reverse_map[fileno($pipe)]);
+    delete($pid_map{$pid});
+    undef($hostlist{$host});
+    kill(15, $pid);
 }
