@@ -2,6 +2,7 @@ rrdcollect-remote
 examples/log.conf
 examples/rrdcollect-remote.conf
 examples/rrdcollect-remote.conf.m4
+examples/rrdcollect.conf
 Makefile.PL
 META.yml                                 Module meta-data (added by MakeMaker)
 README

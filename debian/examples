@@ -1,3 +1,4 @@
 examples/log.conf
 examples/rrdcollect-remote.conf
 examples/rrdcollect-remote.conf.m4
+examples/rrdcollect.conf
