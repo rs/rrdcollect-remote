@@ -1,3 +1,15 @@
+rrdcollect-remote (1.1.0) unstable; urgency=low
+
+  * major feature changes: removed the SSH support!! and replaced it
+    with simple sockets, code is cleaner and it's easier to install.
+    Drawback: it's not compatible with older versions of rrdcollect-remote
+  * added file pattern support in auto-creation rules
+  * updated the documentation and examples
+  * rewritten the auto-creation code to take rules from the socket just
+    after the connection and just before the first RRD update
+
+ -- Olivier Poitrey <rs@mmania.com>  Tue, 28 Dec 2004 15:08:41 +0100
+
 rrdcollect-remote (1.0.7) unstable; urgency=low
 
   * fix a bug making rrdcollect-remote to not kill sub-process
