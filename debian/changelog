@@ -1,3 +1,12 @@
+rrdcollect-remote (1.0.1) unstable; urgency=low
+
+  * added M4 configuration example
+  * added auto-rrd-create option
+  * added some doc about auto RRD creation
+  * added group to host definition
+
+ -- Olivier Poitrey <rs@mmania.com>  Tue,  7 Sep 2004 12:30:05 +0200
+
 rrdcollect-remote (1.0) unstable; urgency=low
 
   * Initial Release.
