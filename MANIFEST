@@ -4,3 +4,13 @@ examples/rrdcollect-remote.conf
 examples/rrdcollect-remote.conf.m4
 Makefile.PL
 META.yml                                 Module meta-data (added by MakeMaker)
+README
+
+debian/changelog
+debian/compat
+debian/control
+debian/copyright
+debian/dirs
+debian/examples
+debian/init
+debian/rules
