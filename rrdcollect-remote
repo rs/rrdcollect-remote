@@ -284,10 +284,9 @@ use IO::Socket::INET;
 use File::Basename;
 use File::Path;
 use File::Temp;
-use URI;
 use sigtrap handler => \&sig_handler, qw(normal-signals error-signals ALRM CHLD);
 
-# $Id: rrdcollect-remote,v 1.22 2004/12/28 14:10:36 rs Exp $
+# $Id: rrdcollect-remote,v 1.23 2004/12/28 14:18:41 rs Exp $
 our $VERSION = '1.1.0';
 
 # some globals
