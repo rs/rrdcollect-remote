@@ -12,27 +12,11 @@ B<rrdcollect-remote> [B<-MFh>] [B<-c> config] [B<-l> logconfig]
 
 =head1 DESCRIPTION
 
-I discovered a nice tool called rrdcollect
-L<http://rrdcollect.sourceforge.net> which can collect lots of status
-information of a machine and put them in an RRD database using pretty
-less ressources.
-
-So it's really nice but I need more because I'd like to have all those
-RRD files centralized on one machine in real time. Yeah, you might
-answer that I can tell rrdcollect to write on a remote filesystem, but
-it's quite more intrusive, especially if you tell rrdcollect to update
-states each 5 seconds. So the idea of using the rrdcollect ability to
-print RRD commands on the standard output comes to me (to a friend
-actually :).
-
-So there it is, rrdcollect-remote connect to several hosts in order to
-get rrdcollect outputs. Thus, a single rrdcollect-remote can update a
-lot of RRD files (using the RRD Perl library) comming from several
-hosts.
-
-Additinally I needed an automatic way to create new RRD files when
-needed. So rrdcollect-remote can search for the rrd create command in
-the remote rrdcollect configuration file and create it automagically.
+rrdcollect-remote is a daemon that uses the rrdcollect ability to print RRD updates commands to its
+standard output to do updates from a remote machine using a persistent connection. Thus you can
+centralize rrdcollect outputs of several hosts on a single repository with no need for complex and
+intrusive file-sharing protocols like NFS or CPU-intensive and inefficiant periodic polling like
+SNMP and so on.
 
 =head1 OPTIONS
 
@@ -43,7 +27,7 @@ the remote rrdcollect configuration file and create it automagically.
 Path to the configuration file. By default, rrdcollect-remote looks
 into /etc/rrdcollect-remote/rrdcollect-remote.conf file.
 
-=item B<-l>, B<--logconf> I<file> 
+=item B<-l>, B<--logconf> I<file>
 
 Path to the log configuration file. By default, rrdcollect-remote
 looks into /etc/rrdcollect-remote/log.conf file.
@@ -73,32 +57,21 @@ Print the help message.
 
 =head1 CONFIGURATION
 
-If the configuration end with .m4 it will be pre-processed with GNU
-C<m4>.
-
-If you intend to use ssh as remote shell (advised) you have to
-generate a passphrase-less ssh key for rrdcollect-remote and allow
-this key on each hosts you want gather. To tell rrdcollect-remote
-which SSH key to use, append C<-i /path/to/your/key> to the
-B<rsh-args> directive.
+If the configuration end with .m4 it will be pre-processed with GNU C<m4>.
 
 =over 4
 
 =item B<host>
 
-Address of the host on which you want grabbe rrdcollect output. This
-parameter can be specified several times. You can specify the remote
-user you want to use by prepending the host with the username followed
-by the C<at> character (eg: user@host).
+Address of the host on which you want grabbe rrdcollect output.
 
 You can add a group information to you host. This information can be
 usefull for target RRD path generation. You add group info, prepend
-your host with the group name between brackets (eg: [my group]host,
-[group]user@host...).
+your host with the group name between brackets (eg: [mygroup]example.com).
 
 =item B<retry-interval>
 
-Number of second to wait before retry a connection to the remote host
+Number of seconds to wait before retry a connection to the remote host
 on failure. Default value is 5 seconds.
 
 =item B<rrdfiles-path>
@@ -119,10 +92,6 @@ domainname (can be empty)
 =item B<%H>
 
 full hostname
-
-=item B<%u>
-
-username (can be empty)
 
 =item B<%g>
 
@@ -286,8 +255,7 @@ use File::Path;
 use File::Temp;
 use sigtrap handler => \&sig_handler, qw(normal-signals error-signals ALRM CHLD);
 
-# $Id: rrdcollect-remote,v 1.23 2004/12/28 14:18:41 rs Exp $
-our $VERSION = '1.1.0';
+our $VERSION = '1.1.1';
 
 # some globals
 our %hostlist;
@@ -331,11 +299,11 @@ if($config->get('version'))
 }
 
 # Configuration file parsing
-# 
+#
 # pre-parse the config file if:
 # - the config file with the postfixed .m4 extension exists
 # - the config file end with .m4 extension
-# - the m4 option is on 
+# - the m4 option is on
 if($config->get("conf") =~ /\.m4$/)
 {
     $config->set("m4", 1);
@@ -530,7 +498,6 @@ sub get_rrdpath
         h => $short_hostname,
         d => $domainname,
         H => $host_info->{host},
-        u => $host_info->{user},
         g => $host_info->{group},
         n => $name,
         f => $file,
@@ -726,14 +693,13 @@ sub _remote_collector_start
 
     unless(defined $host_info)
     {
-        if($host =~ /^(?:\[(.*?)\])?(?:(.*?)\@)?(.+)(?::(\d+))?$/)
+        if($host =~ /^(?:\[(.*?)\])?(.+)(?::(\d+))?$/)
         {
             $host_info =
             {
-                host   => $3,
-                user   => $2,
+                host   => $2,
                 group  => $1,
-                port   => $4 || 9042,
+                port   => $3 || 9042,
             };
         }
         else
@@ -792,7 +758,7 @@ sub print_help
 rrdcollect-remote OPTIONS
 
 OPTIONS:
-    -c, --conf              Path to configuration file 
+    -c, --conf              Path to configuration file
                             (default: /etc/rrdcollect-remote/rrdcollect-remote.conf)
     -l, --logconf           Path to the log configuration file
                             (default: /etc/rrdcollect-remote/log.conf)
