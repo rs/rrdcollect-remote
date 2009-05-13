@@ -6,7 +6,6 @@ examples/rrdcollect.conf
 Makefile.PL
 META.yml                                 Module meta-data (added by MakeMaker)
 README
-TODO
 
 debian/changelog
 debian/compat

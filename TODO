@@ -1,3 +1,0 @@
-- Implementing an solution using sockets with a lightwave agent on the
-  other side like rrdcollect in inetd or something like that. This
-  could replace rsh/ssh mechanism.
