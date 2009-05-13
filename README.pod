@@ -1,0 +1,243 @@
+=pod
+
+=head1 NAME
+
+rrdcollect-remote - Collect rrdcollect output from several hosts to update local RRD files.
+
+=head1 SYNOPSIS
+
+B<rrdcollect-remote> [B<-MFh>] [B<-c> config] [B<-l> logconfig]
+
+=head1 DESCRIPTION
+
+rrdcollect-remote is a daemon that uses the rrdcollect ability to print RRD updates commands to its
+standard output to do updates from a remote machine using a persistent connection. Thus you can
+centralize rrdcollect outputs of several hosts on a single repository with no need for complex and
+intrusive file-sharing protocols like NFS or CPU-intensive and inefficiant periodic polling like
+SNMP and so on.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-c>, B<--conf> I<file>
+
+Path to the configuration file. By default, rrdcollect-remote looks
+into /etc/rrdcollect-remote/rrdcollect-remote.conf file.
+
+=item B<-l>, B<--logconf> I<file>
+
+Path to the log configuration file. By default, rrdcollect-remote
+looks into /etc/rrdcollect-remote/log.conf file.
+
+=item B<-p>, B<pid-file> I<file>
+
+Path to the PID file. By default, rrdcollect-remote uses the
+/var/run/rrdcollect-remote.pid file
+
+=item B<-v>, B<--version>
+
+Print the version number
+
+=item B<-M>, B<--m4>
+
+Pre-process the configuration file with the macro expansion package I<m4>.
+
+=item B<-F>, B<--forground>
+
+Don't put rrdcollect-remote process into background.
+
+=item B<-h>, B<--help>
+
+Print the help message.
+
+=back
+
+=head1 CONFIGURATION
+
+If the configuration end with .m4 it will be pre-processed with GNU C<m4>.
+
+=over 4
+
+=item B<host>
+
+Address of the host on which you want grabbe rrdcollect output.
+
+You can add a group information to you host. This information can be
+usefull for target RRD path generation. You add group info, prepend
+your host with the group name between brackets (eg: [mygroup]example.com).
+
+=item B<retry-interval>
+
+Number of seconds to wait before retry a connection to the remote host
+on failure. Default value is 5 seconds.
+
+=item B<rrdfiles-path>
+
+Path to the base directory for RRD files. You can use some tags that
+will be changed at runtime like:
+
+=over 4
+
+=item B<%h>
+
+short hostname (minus the domain part)
+
+=item B<%d>
+
+domainname (can be empty)
+
+=item B<%H>
+
+full hostname
+
+=item B<%g>
+
+host group (can be empty)
+
+=item B<%n>
+
+name (RRD filename without the directory part nor the .rrd extension)
+
+=item B<%f>
+
+RRD filename
+
+=item B<%F>
+
+RRD full file path (often same as B<%f>)
+
+=back
+
+Default value is /var/lib/rrdcollect-remote/%h/%f.
+
+=item B<logconf>
+
+Path to the log configuration file. Default value is
+C</etc/rrdcollect-remote/rrdcollect-remote.conf>.
+
+=item B<pid-file>
+
+Path to the PID file. Default value is
+C</var/run/rrdcollect-remote.pid>.
+
+=item B<auto-rrd-create>
+
+Enable/disable creation of RRD files when needed. If this option is
+on, rrdcollect-remote will try to find RRD create information for the
+missing file in comments of the remote rrdcollect configuration file.
+
+Can be on or off. Default value is On.
+
+=item B<timeout>
+
+How many second to wait for connection timeout.
+
+=back
+
+=head1 CLIENT INSTALLATION
+
+In order to allow rrdcollect-remote to gather rrdcollect output, you
+have to setup each machine you want to monitor to output rrdcollect
+data on a specific port. Default port is 9042 if not specified in the
+rrdcollect-remote configuration.
+
+The easier want to proceed is to use the super daemon inetd. The
+inetd line would do the trick:
+
+    9042 stream tcp nowait root /usr/sbin/rrdcollect /usr/sbin/rrdcollect -o-
+
+If you need some more security, you can use the tcp wrapper to
+restrict access to certain IPs (see L<tcpd> man page for more info):
+
+    9042 stream tcp nowait root /usr/sbin/tcpd /usr/sbin/rrdcollect -o-
+
+=head1 AUTOMATIC RRD CREATION
+
+The rrdcollect tool doesn't implement a way to create RRD files. It
+only update DS of existing RRD files, letting you do the RRD creation
+work. So rrdcollect-remote use a trick to let you inform it how to
+create RRD files. It's pretty simple, you just have to put a comment
+starting with "rrdtool create <file.rrd>" words followed by valid RRD
+creation arguments. You can break the command if you end the line by a
+backslash and if the next line (containing the rest of the command)
+start with a comment character (sharp). Then you can cat the
+configuration file into the socket just before to start
+rrdcollect. Thus rrdcollect-remote will keep all lines starting with a
+sharp (#) and extract rrdcreate <file.rrd> args... commands from them
+if needed.
+
+You can use the special character "#" in the filename to match one or
+more numbers in the file (see example).
+
+Exemple of valid RRD create info:
+
+    # Auto-RRD-Create Example
+    #
+    # rrdtool create test.rrd --step 5 \
+    #     DS:foobar:GAUGE:2:0:U \
+    #     RRA:AVERAGE:0.5:1:18000
+
+    file:///proc/test
+    "foobar: %d"            test.rrd:foobar
+
+    # Pattern example
+    #
+    # rrdtool create cpu#-stat.rrd --step 5 \
+    #     DS:user:COUNTER:60:0:U \
+    #     DS:nice:COUNTER:60:0:U \
+    #     DS:system:COUNTER:60:0:U \
+    #     DS:idle:COUNTER:60:0:U \
+    #     RRA:AVERAGE:0.5:1:18000
+
+    file:///proc/stat
+    "cpu0 %d %d %d %d" cpu0-stat.rrd:user,nice,system,idle
+    "cpu1 %d %d %d %d" cpu1-stat.rrd:user,nice,system,idle
+    "cpu2 %d %d %d %d" cpu2-stat.rrd:user,nice,system,idle
+    "cpu3 %d %d %d %d" cpu3-stat.rrd:user,nice,system,idle
+
+Example of script you can launch from inetd to allow auto-creation:
+
+    #!/bin/sh
+    grep '^#' /etc/rrdcollect.conf
+    exec /usr/sbin/rrdcollect -o- -c /etc/rrdcollect.conf
+
+=head1 LOGGER CONFIGURATION
+
+See L<Log::Log4perl>
+
+=head1 EXAMPLES
+
+See example directory from the source tree.
+
+=head1 SEE ALSO
+
+L<rrdcollect>, L<rrdtool>, L<Log::Log4perl>, L<perl>
+
+=head1 AUTHOR
+
+Olivier Poitrey E<lt>rs@mmania.comE<gt>
+
+=head1 LICENCE
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 - Olivier Poitrey
+
+
+=cut
+
