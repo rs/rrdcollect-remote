@@ -133,7 +133,7 @@ Can be on or off. Default value is On.
 
 =item B<timeout>
 
-How many second to wait for connection timeout.
+How many second to wait for connection timeout. Default value is 2, use 0 to disable timeout.
 
 =back
 
@@ -273,13 +273,13 @@ $config->define("logconf|l=s",      {DEFAULT => "/etc/rrdcollect-remote/log.conf
 $config->define("pid-file|p=s",     {DEFAULT => '/var/run/rrdcollect-remote.pid'});
 $config->define("m4|M!");
 $config->define('forground|F!');
-$config->define("retry-interval=i", {DEFAULT => 5});
+$config->define("retry-interval=i", {DEFAULT => 10});
 $config->define("host=s@");
 $config->define("rrdfiles-path=s",  {DEFAULT => '/var/lib/rrdcollect-remote/%h/%f'});
 $config->define("auto-rrd-create!", {DEFAULT => 1});
 $config->define("help|h!");
 $config->define("version|v!");
-$config->define("timeout|t=s",      {DEFAULT => 0});
+$config->define("timeout|t=s",      {DEFAULT => 2});
 
 # save argv for later use
 my @argtmp = @ARGV;
