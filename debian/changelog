@@ -1,3 +1,10 @@
+rrdcollect-remote (1.1.1) stable; urgency=low
+
+  * fix various bugs
+  * change default value of connection timeout option to prevent from
+    having the whole daemon stucked when one host stales during connection
+  * fix documentation
+
 rrdcollect-remote (1.1.0) unstable; urgency=low
 
   * major feature changes: removed the SSH support!! and replaced it
