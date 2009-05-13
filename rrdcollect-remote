@@ -472,7 +472,7 @@ while(1)
 
         if($config->get('auto-rrd-create') && ! -f $new_filepath)
         {
-            create_rrd($new_filepath, $$filepath, $host_info);
+            create_rrd($new_filepath, $$filepath, $host_info) or next;
         }
 
         $$filepath = $new_filepath;
