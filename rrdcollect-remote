@@ -550,9 +550,10 @@ sub create_rrd
     $logger->debug("try to find how to create RRD file `$filepath' into remote rrdcollect conf");
 
     my $conf = $host_info->{tmp}->{config_fh};
-    if(!defined($conf))
+    if(!defined($conf) || !fileno($conf))
     {
         $logger->info("There is no information about RRD creation in config file for `$filepath'");
+        return;
     }
     seek($conf, 0, 0);
     my($line, @create_cmd);
